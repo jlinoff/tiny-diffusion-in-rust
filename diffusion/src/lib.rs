@@ -13,7 +13,9 @@
 pub mod blas;
 pub mod data2d;
 pub mod ddpm;
+pub mod dit;
 pub mod flow;
+pub mod image;
 pub mod metrics;
 pub mod mlp;
 pub mod optim;
@@ -23,3 +25,4 @@ pub mod svg;
 pub mod tape;
 pub mod tensor;
 pub mod train2d;
+pub mod trainimg;

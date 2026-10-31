@@ -57,6 +57,52 @@ exact: $(DIFFUSION) ## The samplers with the exact Gaussian fields, no network.
 	$(call hdr,exact)
 	$(DIFFUSION) exact
 
+# Stage 3, images (PLAN.md). The data sets are downloaded into data/ and
+# decompressed; the models depend on the program only order-only (|), so a
+# code change doesn't silently retrain a run of an hour or more: retrain on
+# purpose with make -B. IMG_ARGS passes options to train-img, e.g.
+# IMG_ARGS='--steps 5000 --width 96'.
+URL_mnist   ?= https://ossci-datasets.s3.amazonaws.com/mnist
+URL_fashion ?= https://github.com/zalandoresearch/fashion-mnist/raw/master/data/fashion
+IMG_ARGS    ?=
+SHAPES_ARGS ?= --size 16 --width 64 --blocks 4 --batch 64 --steps 3000 --warmup 200 --lr 2e-3
+
+data/%/train-images-idx3-ubyte data/%/train-labels-idx1-ubyte:
+	$(call hdr,download $*)
+	mkdir -p data/$*
+	for f in train-images-idx3-ubyte train-labels-idx1-ubyte; do \
+		curl -fL -o data/$*/$$f.gz $(URL_$*)/$$f.gz && gunzip -f data/$*/$$f.gz || exit 1; \
+	done
+
+.PHONY: data/mnist data/fashion
+data/mnist data/fashion: data/%: data/%/train-images-idx3-ubyte ## Download MNIST or Fashion-MNIST (make data/mnist).
+
+$(OUT)/digits.safetensors: data/mnist/train-images-idx3-ubyte | $(DIFFUSION) $(OUT)
+	$(call hdr,train-img digits)
+	$(DIFFUSION) train-img --data mnist $(IMG_ARGS) -o $@
+
+$(OUT)/digits-p7.safetensors: data/mnist/train-images-idx3-ubyte | $(DIFFUSION) $(OUT)
+	$(call hdr,train-img digits with 7x7 patches)
+	$(DIFFUSION) train-img --data mnist --patch 7 $(IMG_ARGS) -o $@
+
+$(OUT)/fashion.safetensors: data/fashion/train-images-idx3-ubyte | $(DIFFUSION) $(OUT)
+	$(call hdr,train-img fashion)
+	$(DIFFUSION) train-img --data fashion $(IMG_ARGS) -o $@
+
+$(OUT)/shapes.safetensors: | $(DIFFUSION) $(OUT)
+	$(call hdr,train-img shapes)
+	$(DIFFUSION) train-img --data shapes $(SHAPES_ARGS) -o $@
+
+$(OUT)/%.png: $(OUT)/%.safetensors
+	$(call hdr,sample-img $*)
+	$(DIFFUSION) sample-img --model $< --png $@ --progress $(OUT)/$*-progress.png --real $(OUT)/$*-real.png
+
+.PHONY: digits digits-p7 fashion shapes
+digits: $(OUT)/digits.png ## Train the DiT on MNIST digits and draw samples: 1-2 hours on an M4.
+digits-p7: $(OUT)/digits-p7.png ## The same with 7x7 patches (16 tokens): about half an hour.
+fashion: $(OUT)/fashion.png ## The same on Fashion-MNIST, for comparison.
+shapes: $(OUT)/shapes.png ## A small DiT on synthetic 16x16 shapes, no download: minutes.
+
 .PHONY: smoke
 smoke: $(DIFFUSION) ## Every command end to end on a tiny model, in seconds (tools/ci/smoke.sh).
 	$(call hdr,$@)

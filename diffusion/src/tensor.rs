@@ -286,7 +286,6 @@ impl<T: Float> Mat<T> {
     }
 
     /// Convert to another float type (f32 ↔ f64).
-    #[cfg(test)]
     pub fn convert<U: Float>(&self) -> Mat<U> {
         Mat {
             rows: self.rows,

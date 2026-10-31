@@ -60,8 +60,24 @@ enum Op<T> {
         v: Var,
         seq: usize,
         heads: usize,
+        causal: bool,
         weights: Vec<Mat<T>>,
     },
+    /// C = SiLU(A) = A ⊙ sigmoid(A), element by element (DiT's nonlinearity)
+    Silu(Var),
+    /// C = columns start … start + len − 1 of A (splitting adaLN's outputs)
+    SliceCols { a: Var, start: usize },
+    /// Per-example scale and shift (adaLN): row r of X belongs to example
+    /// r / seq, and C[r] = X[r] ⊙ (1 + S[e]) + H[e], S and H with one row
+    /// per example.
+    Modulate {
+        x: Var,
+        scale: Var,
+        shift: Var,
+        seq: usize,
+    },
+    /// Per-example gate (adaLN-Zero): C[r] = X[r] ⊙ G[r / seq].
+    Gate { x: Var, gate: Var, seq: usize },
     /// Mean over rows with a target of −ln softmax(row)[target], as 1 × 1.
     /// Keeps the probabilities: the backward rule is (probabilities −
     /// one-hot) / n.
@@ -132,6 +148,10 @@ fn gelu_slope<T: Float>(x: T) -> T {
     let t = (c * (x + a * x * x * x)).tanh();
     half * (T::one() + t)
         + half * x * (T::one() - t * t) * c * (T::one() + T::from_f64(3.0) * a * x * x)
+}
+
+fn sigmoid<T: Float>(x: T) -> T {
+    T::one() / (T::one() + (-x).exp())
 }
 
 /// Column sums, as a 1 × m row vector.
@@ -281,7 +301,27 @@ impl<T: Float> Tape<T> {
     }
 
     /// Multi-head causal attention. q, k, v: (B·T) × d, with T = `seq`.
+    /// Causal multi-head attention: each token sees itself and those before
+    /// it (the language model's).
     pub fn attention(&mut self, q: Var, k: Var, v: Var, seq: usize, heads: usize) -> Var {
+        self.attention_with(q, k, v, seq, heads, true)
+    }
+
+    /// Multi-head attention without the causal mask: every token sees every
+    /// token of its sequence (the DiT's, over an image's patches).
+    pub fn attention_full(&mut self, q: Var, k: Var, v: Var, seq: usize, heads: usize) -> Var {
+        self.attention_with(q, k, v, seq, heads, false)
+    }
+
+    fn attention_with(
+        &mut self,
+        q: Var,
+        k: Var,
+        v: Var,
+        seq: usize,
+        heads: usize,
+        causal: bool,
+    ) -> Var {
         let (qm, km, vm) = (self.value(q), self.value(k), self.value(v));
         let d = qm.cols;
         assert!(qm.rows % seq == 0 && d % heads == 0, "attention shapes");
@@ -297,11 +337,13 @@ impl<T: Float> Tape<T> {
                     block(km, b * seq, h * hs, seq, hs),
                     block(vm, b * seq, h * hs, seq, hs),
                 );
-                // Scores and causal softmax, row by row: row i sees 0..=i.
+                // Scores and softmax, row by row: row i sees 0..=i if
+                // causal, else every j.
                 let mut w = Mat::zeros(seq, seq);
                 for i in 0..seq {
+                    let end = if causal { i + 1 } else { seq };
                     let mut max = T::from_f64(f64::NEG_INFINITY);
-                    for j in 0..=i {
+                    for j in 0..end {
                         let mut s = T::zero();
                         for c in 0..hs {
                             s += qb.data[i * hs + c] * kb.data[j * hs + c];
@@ -311,12 +353,12 @@ impl<T: Float> Tape<T> {
                         max = max.max(s);
                     }
                     let mut total = T::zero();
-                    for j in 0..=i {
+                    for j in 0..end {
                         let e = (w.data[i * seq + j] - max).exp();
                         w.data[i * seq + j] = e;
                         total += e;
                     }
-                    for j in 0..=i {
+                    for j in 0..end {
                         w.data[i * seq + j] = w.data[i * seq + j] / total;
                     }
                 }
@@ -338,9 +380,79 @@ impl<T: Float> Tape<T> {
                 v,
                 seq,
                 heads,
+                causal,
                 weights,
             },
         )
+    }
+
+    pub fn silu(&mut self, a: Var) -> Var {
+        let v = self.value(a).map(|x| x * sigmoid(x));
+        self.push(v, Op::Silu(a))
+    }
+
+    /// Columns start … start + len − 1 of a.
+    pub fn slice_cols(&mut self, a: Var, start: usize, len: usize) -> Var {
+        let am = self.value(a);
+        assert!(start + len <= am.cols, "slice past the last column");
+        let mut v = Mat::zeros(am.rows, len);
+        for r in 0..am.rows {
+            v.row_mut(r).copy_from_slice(&am.row(r)[start..start + len]);
+        }
+        self.push(v, Op::SliceCols { a, start })
+    }
+
+    /// x ⊙ (1 + scale) + shift, with one row of scale and shift per example
+    /// and `seq` rows of x per example (adaLN's modulation).
+    pub fn modulate(&mut self, x: Var, scale: Var, shift: Var, seq: usize) -> Var {
+        let (xm, sm, hm) = (self.value(x), self.value(scale), self.value(shift));
+        assert!(
+            xm.rows % seq == 0 && sm.rows == xm.rows / seq,
+            "one scale row per example"
+        );
+        assert_eq!(
+            (sm.rows, sm.cols),
+            (hm.rows, hm.cols),
+            "scale and shift shapes"
+        );
+        assert_eq!(sm.cols, xm.cols, "scale width");
+        let mut v = Mat::zeros(xm.rows, xm.cols);
+        for r in 0..xm.rows {
+            let e = r / seq;
+            for c in 0..xm.cols {
+                v.data[r * xm.cols + c] = xm.data[r * xm.cols + c]
+                    * (T::one() + sm.data[e * sm.cols + c])
+                    + hm.data[e * hm.cols + c];
+            }
+        }
+        self.push(
+            v,
+            Op::Modulate {
+                x,
+                scale,
+                shift,
+                seq,
+            },
+        )
+    }
+
+    /// x ⊙ gate, with one row of gate per example (adaLN-Zero's gate on each
+    /// sublayer's output).
+    pub fn gate(&mut self, x: Var, gate: Var, seq: usize) -> Var {
+        let (xm, gm) = (self.value(x), self.value(gate));
+        assert!(
+            xm.rows % seq == 0 && gm.rows == xm.rows / seq,
+            "one gate row per example"
+        );
+        assert_eq!(gm.cols, xm.cols, "gate width");
+        let mut v = Mat::zeros(xm.rows, xm.cols);
+        for r in 0..xm.rows {
+            let e = r / seq;
+            for c in 0..xm.cols {
+                v.data[r * xm.cols + c] = xm.data[r * xm.cols + c] * gm.data[e * gm.cols + c];
+            }
+        }
+        self.push(v, Op::Gate { x, gate, seq })
     }
 
     pub fn cross_entropy(&mut self, logits: Var, targets: &[Option<usize>]) -> Var {
@@ -516,6 +628,7 @@ impl<T: Float> Tape<T> {
                 v,
                 seq,
                 heads,
+                causal,
                 weights,
             } => {
                 let (qm, km, vm) = (val(*q), val(*k), val(*v));
@@ -538,11 +651,12 @@ impl<T: Float> Tape<T> {
                         let da = dout.matmul(&vb.transpose());
                         let mut ds = Mat::zeros(seq, seq);
                         for i in 0..seq {
+                            let end = if *causal { i + 1 } else { seq };
                             let mut dot = T::zero();
-                            for j in 0..=i {
+                            for j in 0..end {
                                 dot += w.data[i * seq + j] * da.data[i * seq + j];
                             }
-                            for j in 0..=i {
+                            for j in 0..end {
                                 ds.data[i * seq + j] =
                                     w.data[i * seq + j] * (da.data[i * seq + j] - dot) * scale;
                             }
@@ -582,6 +696,62 @@ impl<T: Float> Tape<T> {
                     }
                 }
                 vec![(*logits, d.map(|x| x * scale))]
+            }
+            // C = A·σ(A):  dA = dC ⊙ σ(A)·(1 + A·(1 − σ(A)))
+            Op::Silu(a) => vec![(
+                *a,
+                g.zip_map(val(*a), |d, x| {
+                    let s = sigmoid(x);
+                    d * s * (T::one() + x * (T::one() - s))
+                }),
+            )],
+            // The slice's gradient goes back to its columns; the rest get 0.
+            Op::SliceCols { a, start } => {
+                let am = val(*a);
+                let mut da = Mat::zeros(am.rows, am.cols);
+                for r in 0..am.rows {
+                    da.row_mut(r)[*start..*start + g.cols].copy_from_slice(g.row(r));
+                }
+                vec![(*a, da)]
+            }
+            // dX = dC ⊙ (1 + S);  dS[e] = Σ_r∈e dC ⊙ X;  dH[e] = Σ_r∈e dC
+            Op::Modulate {
+                x,
+                scale,
+                shift,
+                seq,
+            } => {
+                let (xm, sm) = (val(*x), val(*scale));
+                let cols = xm.cols;
+                let mut dx = Mat::zeros(xm.rows, cols);
+                let mut ds = Mat::zeros(sm.rows, cols);
+                let mut dh = Mat::zeros(sm.rows, cols);
+                for r in 0..xm.rows {
+                    let e = r / seq;
+                    for c in 0..cols {
+                        let d = g.data[r * cols + c];
+                        dx.data[r * cols + c] = d * (T::one() + sm.data[e * cols + c]);
+                        ds.data[e * cols + c] += d * xm.data[r * cols + c];
+                        dh.data[e * cols + c] += d;
+                    }
+                }
+                vec![(*x, dx), (*scale, ds), (*shift, dh)]
+            }
+            // dX = dC ⊙ G;  dG[e] = Σ_r∈e dC ⊙ X
+            Op::Gate { x, gate, seq } => {
+                let (xm, gm) = (val(*x), val(*gate));
+                let cols = xm.cols;
+                let mut dx = Mat::zeros(xm.rows, cols);
+                let mut dg = Mat::zeros(gm.rows, cols);
+                for r in 0..xm.rows {
+                    let e = r / seq;
+                    for c in 0..cols {
+                        let d = g.data[r * cols + c];
+                        dx.data[r * cols + c] = d * gm.data[e * cols + c];
+                        dg.data[e * cols + c] += d * xm.data[r * cols + c];
+                    }
+                }
+                vec![(*x, dx), (*gate, dg)]
             }
             // L = Σ d²/n:  dA = dL · 2d/n
             Op::Mse { a, diff } => {
@@ -716,6 +886,88 @@ mod tests {
             reduce(t, o)
         });
         assert!(e < TOL, "{e}");
+    }
+
+    #[test]
+    fn full_attention_over_a_batch_with_several_heads() {
+        let e = check(&[rand(8, 6, 1), rand(8, 6, 2), rand(8, 6, 3)], |t, v| {
+            let o = t.attention_full(v[0], v[1], v[2], 4, 3);
+            reduce(t, o)
+        });
+        assert!(e < TOL, "{e}");
+    }
+
+    /// Without the causal mask and without position information, attention
+    /// treats a sequence as a set: shuffling its tokens shuffles the outputs
+    /// the same way and changes nothing else (permutation equivariance).
+    /// This is why the DiT must add position embeddings to its patches.
+    #[test]
+    fn full_attention_is_permutation_equivariant() {
+        let (q, k, v) = (rand(5, 4, 1), rand(5, 4, 2), rand(5, 4, 3));
+        let perm = [3, 0, 4, 1, 2];
+        let shuffle = |m: &Mat<f64>| {
+            let mut out = Mat::zeros(m.rows, m.cols);
+            for (r, &p) in perm.iter().enumerate() {
+                out.row_mut(r).copy_from_slice(m.row(p));
+            }
+            out
+        };
+        let run = |q: Mat<f64>, k: Mat<f64>, v: Mat<f64>| {
+            let mut t = Tape::new();
+            let (a, b, c) = (t.leaf(q), t.leaf(k), t.leaf(v));
+            let o = t.attention_full(a, b, c, 5, 2);
+            t.value(o).clone()
+        };
+        let plain = run(q.clone(), k.clone(), v.clone());
+        let shuffled = run(shuffle(&q), shuffle(&k), shuffle(&v));
+        let expect = shuffle(&plain);
+        for (a, b) in shuffled.data.iter().zip(&expect.data) {
+            assert!((a - b).abs() < 1e-12);
+        }
+        // The causal version is not: the first token sees only itself.
+        let mut t = Tape::new();
+        let (a, b, c) = (t.leaf(q.clone()), t.leaf(k.clone()), t.leaf(v.clone()));
+        let o = t.attention(a, b, c, 5, 2);
+        assert!((t.value(o).row(0)[0] - v.row(0)[0]).abs() < 1e-12);
+        assert!((plain.row(0)[0] - v.row(0)[0]).abs() > 1e-6);
+    }
+
+    #[test]
+    fn silu_and_slices() {
+        let e = check(&[rand(4, 6, 1)], |t, v| {
+            let s = t.silu(v[0]);
+            let a = t.slice_cols(s, 1, 3);
+            let b = t.slice_cols(v[0], 4, 2);
+            let a2 = t.slice_cols(a, 0, 2);
+            let c = t.add(a2, b);
+            reduce(t, c)
+        });
+        assert!(e < TOL, "{e}");
+    }
+
+    /// adaLN's two operations, with 2 examples of 3 rows each: every row of
+    /// x is scaled, shifted and gated by its own example's row.
+    #[test]
+    fn modulate_and_gate() {
+        let e = check(
+            &[rand(6, 4, 1), rand(2, 4, 2), rand(2, 4, 3), rand(2, 4, 4)],
+            |t, v| {
+                let m = t.modulate(v[0], v[1], v[2], 3);
+                let g = t.gate(m, v[3], 3);
+                reduce(t, g)
+            },
+        );
+        assert!(e < TOL, "{e}");
+        // By hand: one example, one row.
+        let mut t = Tape::<f64>::new();
+        let x = t.leaf(Mat::from_vec(1, 2, vec![2.0, 3.0]));
+        let s = t.leaf(Mat::from_vec(1, 2, vec![0.5, -1.0]));
+        let h = t.leaf(Mat::from_vec(1, 2, vec![1.0, 1.0]));
+        let gt = t.leaf(Mat::from_vec(1, 2, vec![2.0, 0.0]));
+        let m = t.modulate(x, s, h, 1);
+        assert_eq!(t.value(m).data, vec![4.0, 1.0]);
+        let g = t.gate(m, gt, 1);
+        assert_eq!(t.value(g).data, vec![8.0, 0.0]);
     }
 
     #[test]

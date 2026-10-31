@@ -37,6 +37,10 @@ names are explained where they first appear.
   - [Predictions](#predictions)
   - [Exact fields, no network](#exact-fields-no-network)
   - [Results](#results)
+- [Stage 3: images](#stage-3-images)
+  - [What was built](#what-was-built-1)
+  - [Choosing the patch size](#choosing-the-patch-size)
+  - [Predictions](#predictions-1)
 - [Text, later](#text-later)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
@@ -223,8 +227,8 @@ the example changes at every sampling step.
    velocity field as arrows, sample paths from noise to data, and how the
    result degrades with fewer Euler steps. Then DDPM on the same data, for
    comparison: what the 1,000 steps buy and cost.
-3. **Small images.** A DiT on 28 × 28 grayscale digits (see
-   [Decisions](#decisions) for the data): patches, attention
+3. **Small images** (built: see [Stage 3](#stage-3-images)). A DiT on
+   28 × 28 grayscale digits (see [Decisions](#decisions) for the data): patches, attention
    without the causal mask, adaLN conditioning on time, a velocity per
    pixel. Grids of generated digits as image files, and the same picture
    at successive steps of one generation, noise sharpening into a digit.
@@ -532,6 +536,110 @@ for flow, and 0.23 for DDPM on moons, which predicts a different target
 the targets, not the model's error, and they don't compare across data
 sets or objectives.
 
+## Stage 3: images
+
+### What was built
+
+- **The tape's new operations**: attention without the causal mask
+  (checked against finite differences, and for **permutation
+  equivariance**: with no position information, shuffling the tokens
+  shuffles the outputs and changes nothing else, which is why the DiT
+  needs position embeddings), SiLU, column slices, and adaLN's per-image
+  scale, shift and gate.
+- `image.rs`: patches and back, bit for bit, at any size; the IDX reader
+  for MNIST and Fashion-MNIST (IDX: the files' simple format, a header of
+  dimensions, then one byte per pixel); a synthetic data set of shapes
+  (squares, discs and crosses) at any size and channel count; PNG
+  (Portable Network Graphics) files and grids of images, with the
+  format's checksums, CRC-32 (a cyclic redundancy check) and Adler-32,
+  checked against their standard test values.
+- `dit.rs`: the DiT of [Terms](#terms), with **adaLN-Zero**: the layers
+  computing each block's scale, shift and gate start at zero, so every
+  gate starts closed, every block starts as the identity, and the
+  untrained model predicts exactly 0 (a test checks it). Its gradients
+  are checked against finite differences, whole.
+- `trainimg.rs` and the commands `diffusion train-img` and `sample-img`:
+  flow matching on images, checkpoints every 1,000 steps (so a long run
+  can be sampled while it continues), grids of samples, real images for
+  comparison, and the progress of single generations from noise to image.
+- `make digits` and `make fashion` download the data and train; `make
+  shapes` needs no download.
+
+**The default DiT**: width 128, 6 blocks, 4 heads, 4 × 4 patches (49
+tokens of 16 values for MNIST): 1,843,344 parameters, against Decision
+3's guess of 1.2 million. The guess counted the attention and
+feed-forward weights (12d² per block) but not adaLN's, a d × 6d matrix per
+block, half as many again.
+
+### Choosing the patch size
+
+The patch size is a **hyperparameter**: a setting chosen before training,
+not learned (as the width and the number of blocks are). Patches here are
+square, and the side must divide the image's: for 28 × 28 the choices are
+sides of 1, 2, 4, 7, 14 or 28 pixels, so the realistic alternatives to the
+default 4 × 4 are 2 × 2 and 7 × 7.
+
+| Patch | Values per patch | Tokens | Cost per step, relative |
+|---|---|---|---|
+| 2 × 2 | 4 | 196 | about 4–5× (attention alone 16×) |
+| 4 × 4 (default) | 16 | 49 | 1× |
+| 7 × 7 | 49 | 16 | about ⅓ |
+
+What the choice trades:
+
+- **Compute.** The matrix products cost in proportion to the tokens,
+  attention in proportion to their square. On the M4, 2 × 2 patches would
+  turn a 1½-hour MNIST run into 6 to 8 hours; 7 × 7, into about half an
+  hour.
+- **Detail per token.** Each patch enters through one matrix (its pixels
+  to d numbers) and leaves through another (d numbers back to its
+  pixels). A 7 × 7 patch must pack 49 pixels into one vector and produce
+  all 49 back out of it, so fine detail inside a patch is harder to get
+  right; the classic symptom is **block seams**, strokes that step or
+  break at the patch boundaries.
+- **What attention can relate.** Attention connects patches. With small
+  patches, how neighbouring bits of a stroke fit together is attention's
+  job, the transformer's strength; with large ones, it's left to the
+  single matrix in and out.
+- **The evidence**: the DiT paper found exactly this trade, smaller
+  patches giving better images at more compute (Peebles and Xie 2023).
+  Its best model used 2 × 2 patches, on a 32 × 32 grid of compressed
+  image features rather than raw pixels: 256 tokens.
+
+4 × 4 is the middle choice for 28 × 28: few enough tokens for a run of
+under two hours on the M4, small enough patches for seams not to
+dominate. `make digits-p7` trains the same model with 7 × 7 patches, for
+the comparison (prediction 6, below).
+
+### Predictions
+
+Written before any images were generated:
+
+1. **Speed.** In this project's cloud workspace (2 cores, no Accelerate)
+   the default DiT trains at about 25 images per second, 5 seconds a step
+   of 128: too slow for MNIST here. On the M4, with about 20 times the
+   arithmetic (10 cores at the speed tiny-llm-in-rust measured, plus
+   Accelerate), about 0.3 seconds a step, so 20,000 steps in about 1½ to 2
+   hours: faster than Decision 3's "a few hours", because the M4's
+   measured throughput is higher than the guess assumed.
+2. **Digits appear early.** Recognizable digits by a few thousand steps,
+   with blurry, broken strokes; clean ones by the end. Some samples will
+   be ambiguous blends (a 4 that's half 9): nothing tells the model which
+   digit to draw until stage 4.
+3. **The progress rows settle coarse to fine**, as the velocity field of
+   stage 2 did: by t = 0.5 the rough shape and position of the digit are
+   fixed; the last steps sharpen edges.
+4. **Fewer steps blur.** At 10 Euler steps the digits survive but soften;
+   at 2 to 4 steps they smear towards an average digit, a grey blob,
+   stage 2's one-step collapse onto the mean in image form.
+5. **Fashion-MNIST is harder**: with the same model and steps, its
+   samples look worse than the digits do, because clothing has texture
+   and more varied shapes than strokes on a blank page.
+6. **7 × 7 patches: recognizable digits with visible blocking.** About a
+   third of the time per step, and digits still recognizable, but with
+   strokes stepped or misaligned at the 7 × 7 boundaries, which 4 × 4
+   patches don't show as clearly.
+
 ## Text, later
 
 Diffusion isn't only for images. This section describes how it works on
@@ -664,6 +772,21 @@ here as they come up, and stay open until settled.
    takes about 50 steps with the same trained model. The comparison (same
    weights, a twentieth of the passes, how much quality is lost) is the
    lesson.
+5. **Image size, channels and patch size come from the data and the
+   command line; nothing is fixed at 28 × 28.** Decided. A DiT doesn't
+   depend on the image's size: an H × W image cut into p × p patches is
+   (H/p)·(W/p) tokens, a color patch is p·p·3 numbers instead of p·p, and
+   the position embeddings are sized from H/p and W/p when the model is
+   built. The shape is recorded in the checkpoint, so a model refuses
+   images of another size with a clear error. What limits the size is
+   compute: tokens grow with the area, attention's cost with the tokens'
+   square (64 × 64 with 4 × 4 patches is 256 tokens, about 27 times
+   MNIST's attention cost), and larger patches trade detail for speed.
+   Tested at several sizes, channel counts and patch sizes, and with a
+   synthetic data set of shapes at any size (`--data shapes --size N
+   --channels C`), so larger images can be tried without a download.
+   Training starts on MNIST, as decided; CIFAR-10 (32 × 32, color) would
+   be the natural next data set.
 
 ## Where things live
 
@@ -674,7 +797,9 @@ tiny-diffusion-in-rust/
 ├── LICENSE        # MIT
 ├── Makefile       # make test runs every check; one target per step as stages arrive
 ├── diffusion/     # the Rust crate: the library and the `diffusion` command
-│   ├── src/       # tensor, tape, blas, rng, safetensors (the foundation), main.rs
+│   ├── src/       # tensor, tape, blas, rng, safetensors (the foundation);
+│   │              # data2d, flow, ddpm, mlp, optim, train2d, svg, metrics (stage 2);
+│   │              # image, dit, trainimg (stage 3); main.rs, the commands
 │   └── tests/data # test fixtures
 ├── docs/          # figures for this file and the README
 ├── tools/         # toc.py: this file's table of contents and link check;

@@ -9,13 +9,16 @@
 use clap::{Parser, Subcommand};
 use mini_diffusion::data2d::{self, noise, sample};
 use mini_diffusion::ddpm::{self, gaussian_eps, Schedule};
+use mini_diffusion::dit::{Dit, DitConfig};
 use mini_diffusion::flow::{euler, GaussianTruth};
+use mini_diffusion::image::write_grid;
 use mini_diffusion::metrics::energy_distance;
 use mini_diffusion::mlp::{Mlp, MlpConfig};
 use mini_diffusion::rng::Rng;
 use mini_diffusion::svg::{figure, grid, Panel};
 use mini_diffusion::tensor::Mat;
 use mini_diffusion::train2d::{train, Objective, TrainConfig};
+use mini_diffusion::trainimg::{ImgTrainConfig, Source};
 use mini_diffusion::{blas, safetensors};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -116,6 +119,77 @@ enum Command {
         #[arg(long, default_value_t = 2)]
         seed: u64,
     },
+    /// Train the DiT on images (stage 3).
+    TrainImg {
+        /// The images: mnist, fashion (downloaded into --data-dir by make)
+        /// or shapes (synthetic, any size).
+        #[arg(long, default_value = "mnist")]
+        data: String,
+        #[arg(long, default_value = "data")]
+        data_dir: PathBuf,
+        /// For shapes: the image side, in pixels.
+        #[arg(long, default_value_t = 28)]
+        size: usize,
+        /// For shapes: 1 (grayscale) or 3 (color).
+        #[arg(long, default_value_t = 1)]
+        channels: usize,
+        /// Patch side in pixels; it must divide the image's height and width.
+        #[arg(long, default_value_t = 4)]
+        patch: usize,
+        /// d, the length of each token's vector.
+        #[arg(long, default_value_t = 128)]
+        width: usize,
+        #[arg(long, default_value_t = 6)]
+        blocks: usize,
+        #[arg(long, default_value_t = 4)]
+        heads: usize,
+        #[arg(long, default_value_t = 8)]
+        freqs: usize,
+        #[arg(long, default_value_t = 20000)]
+        steps: u64,
+        #[arg(long, default_value_t = 128)]
+        batch: usize,
+        #[arg(long, default_value_t = 1e-3)]
+        lr: f32,
+        #[arg(long, default_value_t = 500)]
+        warmup: u64,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(long, default_value_t = 100)]
+        log_every: u64,
+        /// Write a checkpoint (the model so far) every this many steps.
+        #[arg(long, default_value_t = 1000)]
+        save_every: u64,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Generate images with a trained DiT, as PNG grids.
+    SampleImg {
+        #[arg(long)]
+        model: PathBuf,
+        /// Images to generate (a grid of 8 across).
+        #[arg(long, default_value_t = 64)]
+        n: usize,
+        /// Euler steps.
+        #[arg(long, default_value_t = 50)]
+        steps: usize,
+        #[arg(long, default_value_t = 2)]
+        seed: u64,
+        /// The grid of generated images.
+        #[arg(long)]
+        png: PathBuf,
+        /// Also: 8 generations shown at 9 moments from noise to image.
+        #[arg(long)]
+        progress: Option<PathBuf>,
+        /// Also: a grid of real images from the data set, for comparison.
+        #[arg(long)]
+        real: Option<PathBuf>,
+        #[arg(long, default_value = "data")]
+        data_dir: PathBuf,
+        /// Pixels per image pixel in the grids.
+        #[arg(long, default_value_t = 3)]
+        zoom: usize,
+    },
 }
 
 fn main() -> ExitCode {
@@ -133,7 +207,9 @@ fn run(command: Command) -> Result<(), String> {
         Command::Info => {
             println!("diffusion {}", env!("CARGO_PKG_VERSION"));
             println!("  large matrix products: {}", blas::backend());
-            println!("  stages built: foundation; points in a plane (PLAN.md, Order of work)");
+            println!(
+                "  stages built: foundation; points in a plane; images (PLAN.md, Order of work)"
+            );
             Ok(())
         }
         Command::Train2d {
@@ -332,6 +408,177 @@ fn run(command: Command) -> Result<(), String> {
             }
             Ok(())
         }
+        Command::TrainImg {
+            data,
+            data_dir,
+            size,
+            channels,
+            patch,
+            width,
+            blocks,
+            heads,
+            freqs,
+            steps,
+            batch,
+            lr,
+            warmup,
+            seed,
+            log_every,
+            save_every,
+            output,
+        } => {
+            check_writable(&output)?;
+            let source = Source::open(&data, &data_dir, size, channels)?;
+            let cfg = DitConfig {
+                image: source.shape(),
+                patch,
+                width,
+                blocks,
+                heads,
+                freqs,
+            };
+            cfg.check()?;
+            let tc = ImgTrainConfig {
+                steps,
+                batch,
+                learning_rate: lr,
+                warmup,
+                seed,
+            };
+            let sh = cfg.image;
+            println!(
+                "Training a DiT ({} parameters: width {width}, {blocks} blocks, {heads} heads, {patch}×{patch} patches, {} tokens) on {data} ({}×{}×{}); {steps} steps of {batch}",
+                cfg.parameters(),
+                cfg.tokens(),
+                sh.height,
+                sh.width,
+                sh.channels
+            );
+            println!("   step    loss        lr   images/s   remaining");
+            let mut model = Dit::new(cfg, seed);
+            let meta = |done: u64, loss: f64| {
+                let mut m = BTreeMap::new();
+                m.insert("objective".to_string(), "flow".to_string());
+                m.insert("data".to_string(), data.clone());
+                m.insert("steps".to_string(), done.to_string());
+                m.insert("seed".to_string(), seed.to_string());
+                m.insert("final_loss".to_string(), format!("{loss:.5}"));
+                m
+            };
+            let (mut sum, mut count, mut tick) = (0.0f64, 0u64, Instant::now());
+            let start = Instant::now();
+            let last = std::cell::Cell::new(0.0f64);
+            let mut save_error = None;
+            let losses = mini_diffusion::trainimg::train(
+                &mut model,
+                &source,
+                &tc,
+                save_every,
+                |step, loss| {
+                    sum += loss as f64;
+                    count += 1;
+                    if step % log_every == 0 || step == steps {
+                        let secs = tick.elapsed().as_secs_f64();
+                        let left = secs / count as f64 * (steps - step) as f64;
+                        last.set(sum / count as f64);
+                        println!(
+                            "  {step:>5}   {:.4}  {:.2e}  {:9.0}   {:>9}",
+                            last.get(),
+                            tc.lr(step),
+                            (count as f64 * batch as f64) / secs,
+                            duration(left)
+                        );
+                        (sum, count, tick) = (0.0, 0, Instant::now());
+                    }
+                },
+                |step, m| {
+                    // The model so far, to the same file: sample from it
+                    // while training continues.
+                    let f = m.to_file(meta(step, last.get()));
+                    if let Err(e) = safetensors::write(&output, &f.tensors, &f.metadata) {
+                        save_error = Some(e);
+                    }
+                },
+            );
+            if let Some(e) = save_error {
+                return Err(e);
+            }
+            let tail = &losses[losses.len().saturating_sub(500)..];
+            let final_loss = tail.iter().map(|&l| l as f64).sum::<f64>() / tail.len() as f64;
+            let f = model.to_file(meta(steps, final_loss));
+            safetensors::write(&output, &f.tensors, &f.metadata)?;
+            println!(
+                "Wrote {} in {}; mean loss over the last 500 steps {final_loss:.4}",
+                output.display(),
+                duration(start.elapsed().as_secs_f64())
+            );
+            Ok(())
+        }
+        Command::SampleImg {
+            model,
+            n,
+            steps,
+            seed,
+            png,
+            progress,
+            real,
+            data_dir,
+            zoom,
+        } => {
+            let f = safetensors::read(&model)?;
+            let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
+            let shape = dit.cfg.image;
+            let mut rng = Rng::new(seed);
+            let x0 = noise(n, shape.values(), &mut rng);
+            let start = Instant::now();
+            let (out, path) = euler(x0, steps, |x, t| dit.predict(x, t), progress.is_some());
+            println!(
+                "{n} images from {} with {steps} Euler steps in {:.1} s",
+                model.display(),
+                start.elapsed().as_secs_f64()
+            );
+            check_writable(&png)?;
+            write_grid(&png, &out, shape, 8, zoom)?;
+            println!("Wrote {}", png.display());
+            if let Some(p) = progress {
+                // 8 generations (rows) at 9 moments (columns), t = 0 to 1.
+                let k = 8.min(n);
+                let mut frames = Vec::new();
+                for r in 0..k {
+                    for j in 0..=8 {
+                        let idx = j * steps / 8;
+                        frames.extend_from_slice(path[idx].row(r));
+                    }
+                }
+                let m = Mat::from_vec(k * 9, shape.values(), frames);
+                check_writable(&p)?;
+                write_grid(&p, &m, shape, 9, zoom)?;
+                println!(
+                    "Wrote {} (each row: one image from noise, t = 0, 1/8, …, 1)",
+                    p.display()
+                );
+            }
+            if let Some(p) = real {
+                let name = f.metadata.get("data").cloned().unwrap_or_default();
+                let src = Source::open(&name, &data_dir, shape.height, shape.channels)?;
+                check_writable(&p)?;
+                write_grid(&p, &src.batch(n, seed, 0), shape, 8, zoom)?;
+                println!("Wrote {} (real {name} images)", p.display());
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Seconds as "1 h 05 min", "3 min 20 s" or "12 s".
+fn duration(secs: f64) -> String {
+    let s = secs.round() as u64;
+    if s >= 3600 {
+        format!("{} h {:02} min", s / 3600, (s % 3600) / 60)
+    } else if s >= 60 {
+        format!("{} min {:02} s", s / 60, s % 60)
+    } else {
+        format!("{s} s")
     }
 }
 
