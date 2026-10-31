@@ -1,0 +1,28 @@
+[package]
+name = "mini_diffusion"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.87"
+description = "A small diffusion model, built by hand to learn how image generation works"
+
+[lib]
+name = "mini_diffusion"
+path = "src/lib.rs"
+
+[[bin]]
+name = "diffusion"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+rayon = "1"
+serde_json = "1"
+
+[features]
+# Large f32 matrix products through a BLAS library: Apple's Accelerate on
+# macOS (cargo build --release --features blas). See src/blas.rs.
+blas = []
+
+[profile.release]
+codegen-units = 1
+lto = true
