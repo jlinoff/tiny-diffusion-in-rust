@@ -25,11 +25,21 @@ names are explained where they first appear.
   - [Generating](#generating)
   - [The networks](#the-networks)
   - [Steering](#steering)
-- [The flow](#the-flow)
+- [The flows](#the-flows)
+  - [Training](#training)
+  - [Generation (inference)](#generation-inference)
 - [Order of work](#order-of-work)
 - [Foundation](#foundation)
 - [Design for test](#design-for-test)
-- [Open decisions](#open-decisions)
+- [Stage 2: points in a plane](#stage-2-points-in-a-plane)
+  - [What was built](#what-was-built)
+  - [Predictions](#predictions)
+  - [Exact fields, no network](#exact-fields-no-network)
+  - [Results](#results)
+- [Text, later](#text-later)
+  - [How text diffusion works](#how-text-diffusion-works)
+  - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
+- [Decisions](#decisions)
 - [Where things live](#where-things-live)
 - [Bibliography](#bibliography)
 <!-- /toc -->
@@ -37,7 +47,7 @@ names are explained where they first appear.
 ## Terms
 
 Terms already defined in tiny-llm-in-rust's PLAN.md (matrix, weights,
-gradient, loss, backpropagation, Adam, learning rate, batch, attention,
+gradient, loss, cross-entropy, backpropagation, Adam, learning rate, batch, attention,
 transformer block, residual connection, layer normalization, safetensors)
 mean the same here and aren't repeated.
 
@@ -126,35 +136,75 @@ mean the same here and aren't repeated.
   **guidance scale** w above 1. Larger w gives examples more clearly of
   the requested kind and less varied.
 
-## The flow
+## The flows
 
-Everything follows one pattern, the same at every stage:
+There are two flows, as in tiny-llm-in-rust: training, which adjusts the
+weights, and generation (inference), which uses them frozen. Both are the
+same at every stage, whatever the data (points, images, later text).
+"Step" means something different in each:
+
+- a **training step** is one weight update: a batch of examples, a loss,
+  a backward pass, Adam. Training takes thousands of them.
+- a **sampling step** is one Euler step of generation: one pass through
+  the network, with the weights frozen, moving the example a little way
+  from noise towards data. Generation takes tens of them per example.
+
+### Training
 
 ```
-training, repeated:                      generation:
-  x₁ = a real example                      x = noise (x₀)
-  x₀ = noise, t = random in [0, 1]         for t = 0, Δt, 2Δt, … < 1:
-  x_t = (1 − t)·x₀ + t·x₁                      x = x + v(x, t)·Δt
-  loss = MSE(v(x_t, t), x₁ − x₀)           x is a new example
-  adjust the weights (Adam)
+repeat, one training step at a time:
+  x₁ = a batch of real examples
+  x₀ = noise of the same shape; t = random in [0, 1], one per example
+  x_t = (1 − t)·x₀ + t·x₁                 a point on each straight line
+  loss = MSE(v(x_t, t), x₁ − x₀)          predicted velocity against the line's direction
+  backward pass, then Adam adjusts every weight
 ```
 
-Training never runs the ODE: it only ever sees single points on straight
-lines between noise and data, and learns the average direction through
-each point. Those averages are a velocity field whose paths carry the
-whole noise distribution onto the whole data distribution, which is the
-fact flow matching rests on (Lipman et al. 2023). Generation then follows
-those paths, one Euler step at a time. Compared with a language model:
-generation is again repeated passes through the network, but each pass
-revises the whole example at once instead of adding one token, and the
-number of passes is chosen (the steps), not set by the length.
+Training never runs the ODE, and never takes a sampling step. Each
+example is a single point on a straight line between some noise and some
+data, and the model learns the direction of the line through that point.
+Many different lines pass near any point, so what it learns is their
+average direction there. Those averages make a velocity field whose
+paths carry the whole noise distribution onto the whole data
+distribution: the fact flow matching rests on (Lipman et al. 2023). The
+model learns what to do at every moment of the journey without ever
+making the journey.
+
+Compared with tiny-llm-in-rust's training: there, one step scored the
+next token at every position of a window; here, one step scores a
+velocity for every example at its own random moment t. Both are
+self-supervised, the answers coming free with the data: the next token
+there, the noise that was added here.
+
+### Generation (inference)
+
+```
+x = noise (x₀), the shape of one example
+for t = 0, Δt, 2Δt, … < 1:                one sampling step each
+    x = x + v(x, t)·Δt                     a short straight step along the velocity
+x is a new example
+```
+
+Only generation runs the whole path, one Euler step at a time, with the
+weights frozen. The number of steps is a choice: more follow the curved
+paths more faithfully, fewer are faster and blurrier. Each new starting
+noise gives a different example, as each seed gave a different story.
+
+Compared with tiny-llm-in-rust's generation: both are repeated passes
+through the network with the weights frozen, but there each pass added
+one token and the length set the number of passes; here each pass
+revises the whole example at once, and the number of passes is chosen.
+There's also nothing to cache between passes: a KV cache kept earlier
+tokens' keys and values because they never changed, but every part of
+the example changes at every sampling step.
 
 ## Order of work
 
 1. **Foundation** (done): the matrices, tape, BLAS support, random numbers
    and safetensors files, copied from tiny-llm-in-rust with their tests;
    `make test` and continuous integration from the first commit.
-2. **Points in a plane.** Flow matching with a small MLP on 2D data (two
+2. **Points in a plane** (done: see [Stage 2](#stage-2-points-in-a-plane)).
+   Flow matching with a small MLP on 2D data (two
    interleaved half-moons, a spiral, a ring of Gaussians), each example two
    numbers. Training takes seconds; every step can be plotted as SVG (a
    text format for drawings that browsers display): the data, the learned
@@ -162,7 +212,7 @@ number of passes is chosen (the steps), not set by the length.
    result degrades with fewer Euler steps. Then DDPM on the same data, for
    comparison: what the 1,000 steps buy and cost.
 3. **Small images.** A DiT on 28 × 28 grayscale digits (see
-   [Open decisions](#open-decisions) for the data): patches, attention
+   [Decisions](#decisions) for the data): patches, attention
    without the causal mask, adaLN conditioning on time, a velocity per
    pixel. Grids of generated digits as image files, and the same picture
    at successive steps of one generation, noise sharpening into a digit.
@@ -173,11 +223,8 @@ number of passes is chosen (the steps), not set by the length.
    each t, which patches attend to which, and how early in generation the
    digit's identity is settled.
 6. **Text, later** (optional): a masked diffusion language model on
-   TinyStories, reusing tiny-llm-in-rust's tokenizer. Its noise is masking
-   rather than Gaussian: the forward process hides tokens at random, and
-   the model learns to fill them all in at once (Sahoo et al. 2024; Nie et
-   al. 2025). The comparison with tiny-llm-in-rust's autoregressive model
-   at the same size is the point.
+   TinyStories, reusing tiny-llm-in-rust's tokenizer, compared with
+   tiny-llm-in-rust's model at the same size (see [Text, later](#text-later)).
 
 Each stage ends the way tiny-llm-in-rust's did: predictions written down
 first, then the measurements, including the ones that turn out wrong.
@@ -202,7 +249,7 @@ model didn't, and they'll be added here:
 - attention without the causal mask (stage 3), checked by **permutation
   equivariance**: without position embeddings, shuffling the input tokens
   must shuffle the outputs the same way and change nothing else;
-- the mean squared error as a fused loss operation;
+- the mean squared error as a fused loss operation (added in stage 2);
 - element-wise products and per-example scale and shift, for adaLN;
 - SiLU (x·sigmoid(x)), the nonlinearity DiT uses alongside GELU.
 
@@ -245,29 +292,285 @@ gets:
 - **files round-trip**: the image and plot writers produce what a reader
   gets back.
 
-## Open decisions
+## Stage 2: points in a plane
 
-1. **The image data for stage 3.** MNIST (LeCun et al. 1998: 70,000
-   handwritten digits, 28 × 28, about 11 MB compressed) is the classic,
-   and digits make failures easy to see. Fashion-MNIST (Xiao et al. 2017:
-   the same format, clothing instead of digits) is MIT-licensed, which
-   settles redistribution questions MNIST's terms leave vague. Either is
-   downloaded by the Makefile, never committed.
-2. **How to write images.** PNG is what every viewer opens. A minimal PNG
-   writer needs no library: uncompressed ("stored") deflate blocks, with
-   the CRC-32 and Adler-32 checksums the format requires, a few dozen
-   lines. The simpler alternative is PGM, a plain grayscale format, which
-   macOS Preview opens but GitHub doesn't display.
-3. **The DiT's size.** A first guess, to be measured: width 128, 6 blocks,
-   4 heads, 4 × 4 patches (49 tokens), about 1.2 million parameters. At
-   roughly 0.4 GFLOP per example per training step, a batch of 128 costs
-   about 50 GFLOP; at the tens of GFLOP per second tiny-llm-in-rust's code
-   reached on the M4 with Accelerate, that's around a second a step, and
-   20,000 steps a few hours. A prediction, recorded so the measurement can
-   correct it.
-4. **DDPM's sampler.** Its own 1,000-step ancestral sampler, or DDIM's
-   deterministic shortcut (Song et al. 2021), which takes 50 steps with
-   the same trained model. Both, probably, since the comparison is the
+### What was built
+
+- `data2d.rs`: the four data sets (moons, spiral, rings, gaussian),
+  unlimited and reproducible, and Gaussian noise.
+- `flow.rs`: the interpolation, the target, the Euler sampler, and the
+  exact velocity field for Gaussian data.
+- `ddpm.rs`: DDPM's schedule, its forward process, its ancestral sampler,
+  DDIM's sampler, and the exact noise prediction for Gaussian data.
+- `mlp.rs`: the network, with the time embedding: 35,842 parameters at
+  the defaults (width 128, 3 hidden layers, 8 sine-cosine pairs).
+- `optim.rs` (Adam), `train2d.rs` (training), `svg.rs` (plots),
+  `metrics.rs` (the energy distance, below), and the tape's new fused
+  mean-squared-error operation.
+- Commands: `diffusion train2d`, `sample2d`, `steps2d` and `exact`, and
+  `make` targets for each data set.
+
+**Measuring a result: the energy distance.** For generated points X and
+data points Y it's 2·mean|x − y| − mean|x − x′| − mean|y − y′|, over all
+pairs (Székely and Rizzo 2013): zero only when the two distributions are
+the same, and growing as they differ in location, spread or shape. Two
+independent samples of the same data set give its floor, a little above
+zero; a result near the floor is as good as this measure can tell.
+
+**Why the loss doesn't fall to zero.** Many straight lines pass through
+any point, each with its own direction x₁ − x₀; the network can only
+predict their average, and the spread of the directions around it is
+loss nothing can remove. So a flow model's loss levels off well above
+zero even when its velocity field is right, unlike a language model's
+loss, whose floor is the text's own unpredictability. The level says
+little on its own; the samples are the measure.
+
+### Predictions
+
+Written before the samples were measured (the exact-field table below,
+which needs no training, came first and shaped the third):
+
+1. **One Euler step puts every sample at the data's mean.** At t = 0 a
+   point says nothing about where its line leads, so the ideal velocity is
+   the mean minus the point (a test checks this for the exact Gaussian
+   field). For moons, centered at the origin, one step should give a tight
+   cluster there, not two moons.
+2. **The distance to the data falls with the number of steps and levels
+   off** near the floor by 32 to 64 Euler steps.
+3. **With few steps, samples come out too concentrated**, pulled in from
+   the true shape, as the exact field's Euler steps are.
+4. **DDIM needs about twice as many steps as flow's Euler steps** for the
+   same quality, as with the exact fields; DDPM's ancestral sampler, with
+   all 1,000 steps, is as good as either at its best.
+5. **Every blob of rings is covered**: nothing in the training makes a
+   model drop a blob.
+
+### Exact fields, no network
+
+`diffusion exact`: Gaussian data (standard deviations 0.5 and 0.8), the
+exact velocity and noise predictions, and only the samplers' own error.
+The samples' standard deviations:
+
+| Steps | Flow, Euler | DDPM, DDIM |
+|---|---|---|
+| 1 | 0.000, 0.000 | 0.002, 0.004 |
+| 2 | 0.201, 0.389 | 0.072, 0.177 |
+| 5 | 0.371, 0.612 | 0.264, 0.512 |
+| 10 | 0.433, 0.699 | 0.372, 0.645 |
+| 25 | 0.474, 0.757 | 0.447, 0.733 |
+| 50 | 0.488, 0.777 | 0.474, 0.764 |
+| 100 | 0.495, 0.787 | 0.488, 0.781 |
+| 250 | 0.499, 0.793 | 0.497, 0.790 |
+| 1000 | 0.502, 0.796 | 0.501, 0.795 |
+
+Both samplers start too narrow and converge as the steps increase: the
+paths curve, and a straight step cuts the corner inwards. DDIM's error at
+any step count is about that of flow's Euler at half as many: flow at 25
+steps (0.474) matches DDIM at 50. One step collapses everything onto the
+mean, for both, exactly as the formula says. All of this is the sampler
+alone, before any network adds errors of its own.
+
+### Results
+
+Trained with the defaults (5,000 steps of 256 points, learning rate
+0.002, 35,842 parameters): about 46 seconds each in this project's cloud
+workspace (2 cores, about 110 steps per second). `make stage2` reproduces
+everything; the figures are `out/*.svg`, and the two for moons are in
+`docs/`.
+
+![Moons: data, samples, paths and the learned velocity field](docs/moons-flow.svg)
+
+**Moons, by sampling steps** (`diffusion steps2d`; energy distance to the
+data, 2,000 points; two samples of the data itself give −0.0013, an
+estimate that can dip just below zero):
+
+| Steps | Flow, Euler | DDPM, DDIM |
+|---|---|---|
+| 1 | 0.812 | 6.707 |
+| 2 | 0.196 | 0.188 |
+| 4 | 0.050 | 0.086 |
+| 8 | 0.012 | 0.015 |
+| 16 | 0.0047 | 0.0049 |
+| 32 | 0.0024 | 0.0031 |
+| 64 | 0.0013 | 0.0028 |
+| 128 | 0.0009 | 0.0026 |
+| 1,000 (DDPM's ancestral) | | 0.0014 |
+
+![Moons by number of Euler steps](docs/moons-flow-steps.svg)
+
+Rings and spiral, by flow at 50 steps: −0.0003 and −0.0001, both at their
+data's floor.
+
+**The predictions, checked:**
+
+1. **One step puts every sample at the mean: right.** A tight cluster at
+   the origin (the figure's first panel), and the velocity field at t = 0
+   points from everywhere towards the middle, as the formula says.
+2. **The distance falls and levels off by 32 to 64 steps: right.** 0.0024
+   at 32, 0.0013 at 64, near the floor.
+3. **Few steps give samples that are too concentrated: half right.** At 4
+   and 8 steps each moon is a thin, sharp curve, narrower than the data's,
+   as predicted; but the larger error is something else: stragglers
+   scattered across the gap between the moons, points whose paths were
+   cut short before they reached either one. The exact Gaussian, with
+   only one blob, had no gap to strand them in.
+4. **DDIM needs twice flow's steps: wrong.** From 2 to 16 steps the two
+   are about equal. DDIM differs at the ends instead: one step explodes
+   (6.7, points scattered far outside the window), and from 32 steps on
+   it levels off higher (about 0.003 against flow's 0.0009). The
+   explosion has a clear cause: DDIM's single jump from step 1,000
+   estimates the clean point by dividing by √ᾱ₁₀₀₀ ≈ 0.006, which
+   multiplies any error in the network's noise prediction by about 150.
+   With the exact prediction there's no error to multiply, and it
+   collapsed onto the mean like flow. The higher plateau is likely the
+   same effect in milder form, the noise prediction's errors at high
+   noise amplified, but that's a guess, not a measurement. DDPM's
+   ancestral sampler, with all 1,000 steps, beats DDIM's best (0.0014),
+   but not flow's at 64 steps or more, with a twentieth of the passes.
+5. **Every blob of rings is covered: right.** All eight, with a few
+   stragglers along the circle between them.
+
+**What the pictures add.** Flow's paths are nearly straight lines from
+noise to data (the figure's third panel), which is why so few steps
+suffice: a straight path is followed exactly by a single Euler step, and
+it's the bends that need more. The velocity field shows when the decision
+is made: at t = 0 every arrow points towards the middle, at t = 0.5 the
+arrows already point towards the nearest part of the data, and by
+t = 0.9 they pull hard onto it, with the field between the moons (or
+rings' blobs) splitting points to one side or the other.
+
+**The losses** level off at 1.51 (moons), 1.82 (rings) and 1.45 (spiral)
+for flow, and 0.23 for DDPM on moons, which predicts a different target
+(the noise, not the velocity). As above, these floors are the spread of
+the targets, not the model's error, and they don't compare across data
+sets or objectives.
+
+## Text, later
+
+Diffusion isn't only for images. This section describes how it works on
+text, then compares it with the language model of tiny-llm-in-rust, which
+a reader of this project has already built and studied.
+
+### How text diffusion works
+
+Text is tokens, not numbers on a continuum, so Gaussian noise doesn't fit
+it: a token plus a little noise isn't a slightly different token. The
+noise is **masking** instead: a special MASK token replacing a real one.
+
+- **The forward process**: at time t, each token is hidden independently
+  with probability 1 − t, in this project's convention (t = 0 is noise,
+  t = 1 data): every token at t = 0, none at t = 1. A fully masked
+  sequence is the text equivalent of pure static.
+- **Training**: take a text, pick t, mask each token with probability
+  1 − t, and train the model to predict the original token at every
+  masked position: a cross-entropy loss over the masked positions only.
+  The network is a transformer whose attention is **bidirectional**: every
+  position sees every other, masked or not, before and after it. This is
+  a **masked diffusion language model** (Sahoo et al. 2024); LLaDA
+  showed the recipe works at the scale of billions of parameters (Nie et
+  al. 2025).
+- **Generation**: start from a sequence that's all MASK and run a fixed
+  number of steps. At each, the model predicts every masked position at
+  once, and some of those predictions (the most confident, say) are kept,
+  the rest masked again. After the last step nothing is masked. A text
+  of 256 tokens might take 64 steps, settling four tokens per step on
+  average, and not in order: a story's last sentence can appear before
+  its middle.
+- **A prompt** is simply the part of the sequence that's never masked:
+  every position attends to it, and generation fills in what follows.
+- **Infilling** (filling a gap with context on both sides: the missing
+  middle of a sentence, a function between two others) comes free, since
+  nothing requires the masked positions to be at the end.
+
+Hybrids exist too: Transfusion trains one transformer that writes text
+token by token and generates images by diffusion, switching between the
+two within a sequence (Zhou et al. 2024).
+
+### Compared with tiny-llm-in-rust's model
+
+| | tiny-llm-in-rust (autoregressive) | Masked diffusion |
+|---|---|---|
+| Attention | causal: each token sees only those before it | bidirectional: every position sees all |
+| Training target | the next token, at every position | the original token, at the masked positions |
+| Generation | one token per pass, left to right | several tokens per pass, in any order |
+| Passes for 256 tokens | 256 | a chosen number of steps, say 64 |
+| KV cache | yes: earlier tokens' keys and values never change | no simple one: every position can change until settled, and each pass recomputes all of them |
+| A token, once written | final | settled when kept; before that, revised freely |
+| Prompt, infilling | prompt yes; infilling awkward | both natural |
+
+What that means for efficiency, in the terms tiny-llm-in-rust measured:
+
+- **Autoregressive generation is limited by memory bandwidth.** Each
+  token needs a full pass that reads every weight to produce one token:
+  SmolLM-1.7B ran at 9 tokens per second on the M4 because every token
+  read its 6.8 GB of weights, while the arithmetic units mostly waited.
+- **Diffusion settles several tokens per pass.** Each pass still reads the
+  weights once, but does useful arithmetic at every position, so the
+  hardware is far better used and the whole text arrives sooner.
+- **But the total arithmetic is usually higher.** Every pass processes the
+  whole sequence, with no cache to skip the settled part, and some work
+  goes into predictions that are discarded and redone. Diffusion trades
+  more arithmetic for fewer sequential passes: a good trade where
+  arithmetic is plentiful and passes are the bottleneck, as on a GPU, not
+  a free saving.
+- **Costs in use**: text that may still change is hard to stream as it's
+  written, which matters for code, structured data and speech.
+
+Where the field stood in August 2026, as a dated note rather than a
+result of this project: hosted diffusion models generated roughly 800 to
+2,100 tokens per second against 40 to 200 for autoregressive ones, but
+scored well below the best autoregressive models on quality, and their
+first-answer times weren't better (BenchLM 2026; figures from different
+models and hardware, so indicative only).
+
+**The experiment for stage 6**, then, at a size this project can
+measure: a masked diffusion model and tiny-llm-in-rust's model, the same
+tokenizer, corpus and parameter count, both on the M4. Predictions to
+record before running:
+
+- diffusion generates a story faster, since the M4 is bandwidth-limited
+  as above, by a factor that depends on the number of steps;
+- its stories are less coherent at the same size, by a margin to be
+  measured with the same losses and the same requested-word evaluation
+  tiny-llm-in-rust used;
+- it keeps characters straight differently: it sees the whole story at
+  every step, which may help with consistency, but settles tokens in
+  parallel, which may let two tokens settled in the same step contradict
+  each other, since neither sees the other's choice.
+
+## Decisions
+
+Settled before stage 2, each with its reason; new questions get added
+here as they come up, and stay open until settled.
+
+1. **The image data: digits first, clothing as a comparison.** Decided.
+   MNIST (LeCun et al. 1998: 70,000 handwritten digits, 28 × 28, about
+   11 MB compressed) is the classic, and digits make failures easy to see:
+   a malformed 4 is obvious. Fashion-MNIST (Xiao et al. 2017: the same
+   format and size, ten kinds of clothing instead of digits, MIT-licensed)
+   is supported too, by a command-line option, so the same model and
+   settings can be compared on a harder kind of image. Both are downloaded
+   by the Makefile, never committed, which also leaves MNIST's vaguely
+   stated terms out of the repository.
+2. **Images are written as PNG.** Decided. PNG is what every viewer opens,
+   GitHub included. A minimal writer needs no library: uncompressed
+   ("stored") deflate blocks, with the CRC-32 and Adler-32 checksums the
+   format requires, a few dozen lines, tested by checking those checksums
+   and reading the pixels back. (PGM, a plain grayscale format, was the
+   simpler alternative, but GitHub doesn't display it.)
+3. **The DiT's size is set on the command line, the first guess as the
+   defaults.** Decided: width 128, 6 blocks, 4 heads, 4 × 4 patches (49
+   tokens), about 1.2 million parameters, each changeable with an option
+   (`--width`, `--blocks`, `--heads`, `--patch`), and recorded in the
+   checkpoint so a model always says what shape it is. The estimate, to be
+   corrected by measurement: roughly 0.4 GFLOP per example per training
+   step, so a batch of 128 costs about 50 GFLOP; at the tens of GFLOP per
+   second tiny-llm-in-rust's code reached on the M4 with Accelerate,
+   that's around a second a step, and 20,000 steps a few hours.
+4. **DDPM gets both samplers.** Decided: its own 1,000-step ancestral
+   sampler, and DDIM's deterministic shortcut (Song et al. 2021), which
+   takes about 50 steps with the same trained model. The comparison (same
+   weights, a twentieth of the passes, how much quality is lost) is the
    lesson.
 
 ## Where things live
@@ -281,7 +584,9 @@ tiny-diffusion-in-rust/
 ├── diffusion/     # the Rust crate: the library and the `diffusion` command
 │   ├── src/       # tensor, tape, blas, rng, safetensors (the foundation), main.rs
 │   └── tests/data # test fixtures
-├── tools/         # toc.py: this file's table of contents and link check
+├── docs/          # figures for this file and the README
+├── tools/         # toc.py: this file's table of contents and link check;
+│                  # ci/smoke.sh: every command end to end, in seconds
 ├── .github/       # workflows/main.yaml: formatting, lint and tests, on Linux and macOS
 ├── data/          # downloaded datasets (git-ignored)
 └── out/           # generated files: models, plots, images (git-ignored)
@@ -314,6 +619,9 @@ tiny-diffusion-in-rust/
   High-Resolution Image Synthesis." ICML.
   [arXiv:2403.03206](https://arxiv.org/abs/2403.03206). Stable Diffusion 3:
   flow matching and a transformer, at scale.
+- Székely, G. J., & Rizzo, M. L. (2013). "Energy statistics: A class of
+  statistics based on distances." Journal of Statistical Planning and
+  Inference, 143(8), 1249–1272. The energy distance.
 - LeCun, Y., Bottou, L., Bengio, Y., & Haffner, P. (1998). "Gradient-Based
   Learning Applied to Document Recognition." Proceedings of the IEEE. The
   MNIST digits.
@@ -325,3 +633,9 @@ tiny-diffusion-in-rust/
   [arXiv:2406.07524](https://arxiv.org/abs/2406.07524).
 - Nie, S., et al. (2025). "Large Language Diffusion Models."
   [arXiv:2502.09992](https://arxiv.org/abs/2502.09992). LLaDA.
+- Zhou, C., et al. (2024). "Transfusion: Predict the Next Token and
+  Diffuse Images with One Multi-Modal Model."
+  [arXiv:2408.11039](https://arxiv.org/abs/2408.11039).
+- BenchLM (2026). "Diffusion vs Autoregressive LLMs," August 3, 2026.
+  [benchlm.ai](https://www.benchlm.ai/blog/posts/diffusion-vs-autoregressive-llm).
+  Measured speeds and quality scores of hosted models.

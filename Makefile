@@ -24,11 +24,50 @@ $(DIFFUSION): $(DIFFUSION_SRC)
 info: $(DIFFUSION) ## Show what the build contains.
 	$(DIFFUSION) info
 
+$(OUT):
+	mkdir -p $@
+
+# Stage 2, points in a plane (PLAN.md). out/<data>-<objective>.safetensors
+# is a trained model; .svg its samples, paths and velocity field;
+# -steps.svg the samples by number of sampling steps. TRAIN2D_ARGS passes
+# options to train2d, e.g. TRAIN2D_ARGS='--steps 2000 --width 64'.
+TRAIN2D_ARGS ?=
+
+$(OUT)/%-flow.safetensors: $(DIFFUSION) | $(OUT)
+	$(call hdr,train2d $* flow)
+	$(DIFFUSION) train2d --data $* --objective flow $(TRAIN2D_ARGS) -o $@
+
+$(OUT)/%-ddpm.safetensors: $(DIFFUSION) | $(OUT)
+	$(call hdr,train2d $* ddpm)
+	$(DIFFUSION) train2d --data $* --objective ddpm $(TRAIN2D_ARGS) -o $@
+
+$(OUT)/%-steps.svg: $(OUT)/%.safetensors
+	$(call hdr,steps2d $*)
+	$(DIFFUSION) steps2d --model $< --svg $@
+
+$(OUT)/%.svg: $(OUT)/%.safetensors
+	$(call hdr,sample2d $*)
+	$(DIFFUSION) sample2d --model $< --svg $@
+
+.PHONY: moons spiral rings gaussian moons-ddpm stage2 exact
+moons spiral rings gaussian: %: $(OUT)/%-flow.svg $(OUT)/%-flow-steps.svg ## Train flow on that data set and plot it (e.g. make moons).
+moons-ddpm: $(OUT)/moons-ddpm.svg $(OUT)/moons-ddpm-steps.svg ## DDPM on moons, for comparison (DDIM and ancestral sampling).
+stage2: exact moons moons-ddpm rings spiral ## Everything of stage 2: a few minutes.
+exact: $(DIFFUSION) ## The samplers with the exact Gaussian fields, no network.
+	$(call hdr,exact)
+	$(DIFFUSION) exact
+
+.PHONY: smoke
+smoke: $(DIFFUSION) ## Every command end to end on a tiny model, in seconds (tools/ci/smoke.sh).
+	$(call hdr,$@)
+	tools/ci/smoke.sh > /dev/null
+	@echo "every command ran"
+
 # Checks: the same ones CI runs (.github/workflows/main.yaml); keep the two
 # in step. Each stage adds its tests here as it arrives (PLAN.md, Design
 # for test).
 .PHONY: test
-test: test-rust lint ## Run every check: the tests and lint.
+test: test-rust smoke lint ## Run every check: the tests, the smoke test and lint.
 	@printf "\nAll checks passed.\n"
 
 .PHONY: test-rust

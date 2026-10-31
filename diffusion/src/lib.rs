@@ -11,7 +11,15 @@
 //! its tests and from the command line alike.
 
 pub mod blas;
+pub mod data2d;
+pub mod ddpm;
+pub mod flow;
+pub mod metrics;
+pub mod mlp;
+pub mod optim;
 pub mod rng;
 pub mod safetensors;
+pub mod svg;
 pub mod tape;
 pub mod tensor;
+pub mod train2d;

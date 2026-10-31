@@ -44,10 +44,10 @@ jobs:
         run: cargo clippy --release --manifest-path diffusion/Cargo.toml --all-targets ${{ matrix.features }} -- -D warnings
       - name: Tests
         run: cargo test --release --manifest-path diffusion/Cargo.toml ${{ matrix.features }}
-      - name: Build and run
+      - name: Every command, end to end (smoke test)
         run: |
           cargo build --release --manifest-path diffusion/Cargo.toml ${{ matrix.features }}
-          diffusion/target/release/diffusion info
+          tools/ci/smoke.sh
 
   python:
     name: Python

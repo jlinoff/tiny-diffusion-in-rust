@@ -70,6 +70,9 @@ enum Op<T> {
         targets: Vec<Option<usize>>,
         probs: Mat<T>,
     },
+    /// Mean over every element of (A − Y)² for a fixed target Y, as 1 × 1:
+    /// the diffusion losses. Keeps A − Y: the backward rule is 2(A − Y)/n.
+    Mse { a: Var, diff: Mat<T> },
     /// Σ A ⊙ W for a fixed W, as 1 × 1: used by the tests to turn any result
     /// into a single number.
     #[allow(dead_code)]
@@ -184,7 +187,6 @@ impl<T: Float> Tape<T> {
 
     /// The gradient of the loss with respect to v, after `backward`; taken
     /// out of the tape (it's only needed once).
-    #[allow(dead_code)] // read by the training loop (step 4, stage 2)
     pub fn take_grad(&mut self, v: Var) -> Mat<T> {
         let m = &self.nodes[v.0].value;
         let (rows, cols) = (m.rows, m.cols);
@@ -376,6 +378,26 @@ impl<T: Float> Tape<T> {
         )
     }
 
+    /// The mean squared error between `a` and a fixed target of the same
+    /// shape: the average of (a − target)² over every element. The target is
+    /// data (the velocity or noise to predict), not a variable, so no
+    /// gradient flows to it.
+    pub fn mse(&mut self, a: Var, target: &Mat<T>) -> Var {
+        let am = self.value(a);
+        assert_eq!(
+            (am.rows, am.cols),
+            (target.rows, target.cols),
+            "target shape"
+        );
+        let diff = am.zip_map(target, |x, y| x - y);
+        let mut s = T::zero();
+        for &d in &diff.data {
+            s += d * d;
+        }
+        let n = T::from_f64(diff.data.len() as f64);
+        self.push(Mat::from_vec(1, 1, vec![s / n]), Op::Mse { a, diff })
+    }
+
     #[allow(dead_code)]
     pub fn weighted_sum(&mut self, a: Var, w: Mat<T>) -> Var {
         let am = self.value(a);
@@ -561,6 +583,11 @@ impl<T: Float> Tape<T> {
                 }
                 vec![(*logits, d.map(|x| x * scale))]
             }
+            // L = Σ d²/n:  dA = dL · 2d/n
+            Op::Mse { a, diff } => {
+                let scale = g.data[0] * T::from_f64(2.0 / diff.data.len() as f64);
+                vec![(*a, diff.map(|d| d * scale))]
+            }
             Op::WeightedSum(a, w) => vec![(*a, w.map(|x| x * g.data[0]))],
         }
     }
@@ -646,6 +673,21 @@ mod tests {
             reduce(t, g)
         });
         assert!(e < TOL, "{e}");
+    }
+
+    #[test]
+    fn mean_squared_error() {
+        let target = rand(5, 3, 7);
+        let e = check(&[rand(5, 4, 1), rand(4, 3, 2)], |t, v| {
+            let p = t.matmul(v[0], v[1]);
+            t.mse(p, &target)
+        });
+        assert!(e < TOL, "{e}");
+        // The value itself, by hand.
+        let mut t = Tape::<f64>::new();
+        let a = t.leaf(Mat::from_vec(1, 3, vec![1.0, 2.0, 4.0]));
+        let l = t.mse(a, &Mat::from_vec(1, 3, vec![0.0, 2.0, 1.0]));
+        assert!((t.value(l).data[0] - 10.0 / 3.0).abs() < 1e-12);
     }
 
     #[test]

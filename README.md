@@ -11,16 +11,23 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: the foundation.** The code copied from tiny-llm-in-rust is in place
-with its tests, and `make test` and continuous integration run from the
-first commit. The diffusion stages come next, in the order set out in
-[PLAN.md](PLAN.md).
+**Status: stage 2 of 6, points in a plane.** Flow matching and DDPM (the
+original diffusion recipe) on 2D data, with plots of the samples, the paths
+from noise to data, and the learned velocity field; the next stage is
+images of digits. Every stage arrives with its tests, and `make test` and
+continuous integration have run from the first commit.
+
+![Moons: data, generated points, their paths from noise, and the learned velocity field](docs/moons-flow.svg)
+
+Each panel above comes from a 36,000-parameter network trained in under a
+minute: points drawn from noise follow the learned velocity field (bottom
+row, at three moments) to land on the two moons.
 
 ## PLAN.md: the real documentation
 
 [PLAN.md](PLAN.md) explains everything: what diffusion and flow matching
 are, every term defined before use, the stages in order, how each will be
-tested, and the decisions still open. Each stage will record its
+tested, and the design decisions with their reasons. Each stage will record its
 predictions before the measurements, including the ones that turn out
 wrong.
 
@@ -35,10 +42,14 @@ wrong.
 ## Try it
 
 ```
-make info          # build, and show what the build contains
-make test          # every check: the Rust tests, formatting, clippy, PLAN.md's links
+make moons         # train flow matching on two moons, plot it (out/moons-flow.svg): under a minute
+make moons-ddpm    # the same data by DDPM, sampled with DDIM and DDPM's own 1,000 steps
+make stage2        # everything of stage 2: moons, rings, spiral, and the exact-field table
+make test          # every check: the tests, a smoke test of every command, formatting, lint
 make help          # every target
 ```
+
+The plots are SVG files; any browser opens them.
 
 ## License
 
