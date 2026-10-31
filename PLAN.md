@@ -46,10 +46,16 @@ names are explained where they first appear.
 
 ## Terms
 
-Terms already defined in tiny-llm-in-rust's PLAN.md (matrix, weights,
-gradient, loss, cross-entropy, backpropagation, Adam, learning rate, batch, attention,
-transformer block, residual connection, layer normalization, safetensors)
-mean the same here and aren't repeated.
+Terms already defined in tiny-llm-in-rust's PLAN.md mean the same here
+and aren't repeated: weights, tensor, gradient, loss, cross-entropy, backpropagation, automatic differentiation (the tape),
+Adam, learning rate, batch, attention, GELU (the Gaussian error linear
+unit, a smooth nonlinearity), transformer block, residual connection,
+layer normalization, KV cache (key–value cache), checkpoint,
+safetensors, and f32 and f64 (32- and 64-bit floating-point numbers).
+Two more, used here: **BLAS** (Basic Linear Algebra
+Subprograms, the standard interface for fast matrix products, here
+Apple's Accelerate library on macOS) and **GFLOP** (a billion
+floating-point operations; GFLOP/s, a billion per second).
 
 ### What a diffusion model does
 
@@ -92,6 +98,11 @@ mean the same here and aren't repeated.
   at each of those steps, adding a little fresh noise back each time. It
   works, but slowly; flow matching is the simpler descendant that current
   image models such as Stable Diffusion 3 use (Esser et al. 2024).
+- **DDIM** (denoising diffusion implicit models; Song et al. 2021): a faster
+  way to generate from a DDPM-trained model, with no retraining. It visits
+  a subsequence of the steps (say 50 of the 1,000), each jump estimating
+  the clean example and re-noising it to the next level, and adds no
+  fresh noise.
 
 ### Generating
 
@@ -502,8 +513,10 @@ What that means for efficiency, in the terms tiny-llm-in-rust measured:
 
 - **Autoregressive generation is limited by memory bandwidth.** Each
   token needs a full pass that reads every weight to produce one token:
-  SmolLM-1.7B ran at 9 tokens per second on the M4 because every token
-  read its 6.8 GB of weights, while the arithmetic units mostly waited.
+  SmolLM-1.7B (the 1.7-billion-parameter open-weight model
+  tiny-llm-in-rust runs) generated 9 tokens per second on the M4 because
+  every token read its 6.8 GB of weights, while the arithmetic units
+  mostly waited.
 - **Diffusion settles several tokens per pass.** Each pass still reads the
   weights once, but does useful arithmetic at every position, so the
   hardware is far better used and the whole text arrives sooner.
@@ -511,7 +524,8 @@ What that means for efficiency, in the terms tiny-llm-in-rust measured:
   whole sequence, with no cache to skip the settled part, and some work
   goes into predictions that are discarded and redone. Diffusion trades
   more arithmetic for fewer sequential passes: a good trade where
-  arithmetic is plentiful and passes are the bottleneck, as on a GPU, not
+  arithmetic is plentiful and passes are the bottleneck, as on a GPU
+  (graphics processing unit, the chips most models are trained on), not
   a free saving.
 - **Costs in use**: text that may still change is hard to stream as it's
   written, which matters for code, structured data and speech.
@@ -544,7 +558,8 @@ Settled before stage 2, each with its reason; new questions get added
 here as they come up, and stay open until settled.
 
 1. **The image data: digits first, clothing as a comparison.** Decided.
-   MNIST (LeCun et al. 1998: 70,000 handwritten digits, 28 × 28, about
+   MNIST (Modified National Institute of Standards and Technology
+   digits; LeCun et al. 1998: 70,000 handwritten digits, 28 × 28, about
    11 MB compressed) is the classic, and digits make failures easy to see:
    a malformed 4 is obvious. Fashion-MNIST (Xiao et al. 2017: the same
    format and size, ten kinds of clothing instead of digits, MIT-licensed)
@@ -552,7 +567,8 @@ here as they come up, and stay open until settled.
    settings can be compared on a harder kind of image. Both are downloaded
    by the Makefile, never committed, which also leaves MNIST's vaguely
    stated terms out of the repository.
-2. **Images are written as PNG.** Decided. PNG is what every viewer opens,
+2. **Images are written as PNG** (Portable Network Graphics). Decided.
+   PNG is what every viewer opens,
    GitHub included. A minimal writer needs no library: uncompressed
    ("stored") deflate blocks, with the CRC-32 and Adler-32 checksums the
    format requires, a few dozen lines, tested by checking those checksums
@@ -593,6 +609,12 @@ tiny-diffusion-in-rust/
 ```
 
 ## Bibliography
+
+Venues: ICML (International Conference on Machine Learning), NeurIPS
+(Neural Information Processing Systems), ICLR (International Conference on
+Learning Representations), ICCV (International Conference on Computer
+Vision); arXiv is the open server where most papers in the field appear
+first.
 
 - Sohl-Dickstein, J., Weiss, E., Maheswaranathan, N., & Ganguli, S. (2015).
   "Deep Unsupervised Learning using Nonequilibrium Thermodynamics." ICML.
