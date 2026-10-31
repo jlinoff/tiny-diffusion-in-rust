@@ -31,6 +31,7 @@ names are explained where they first appear.
 - [Order of work](#order-of-work)
 - [Foundation](#foundation)
 - [Design for test](#design-for-test)
+- [How to read the figures](#how-to-read-the-figures)
 - [Stage 2: points in a plane](#stage-2-points-in-a-plane)
   - [What was built](#what-was-built)
   - [Predictions](#predictions)
@@ -306,6 +307,77 @@ gets:
   every acronym in PLAN.md and README.md defined where it's first used
   (`tools/acronyms.py`; names that need no definition are listed in
   `tools/acronyms-known.txt`).
+
+## How to read the figures
+
+Every stage produces figures, and they're built to be read the same way.
+This section is for a reader new to diffusion; it uses stage 2's figures
+(`make stage2`, then open `out/*.svg` in a browser) as the examples.
+
+**The picture to keep in mind: a wind map.** The trained network is a
+wind map that changes with time: at every point and every moment t, which
+way to blow and how hard (the velocity field). Generation releases leaves
+at random spots (the noise) and lets the wind carry them from t = 0 to
+t = 1; where they land is the result. The number of sampling steps is how
+often each leaf checks the wind: with few steps, a leaf flies straight for
+long stretches and misses the curves.
+
+**Samples panels** (`generated`, and each panel of `-steps.svg`):
+
+- **each dot is one generated example**, which began as one random point;
+- **in a steps figure, every panel uses the same starting points and the
+  same trained network**: only the number of steps changes, so every
+  difference between panels comes from how coarsely the path was
+  followed, not from the network;
+- **what to look at**: the *shape* (are both moons there, all eight
+  blobs?), the *sharpness* (thin, crisp arcs like the data's, or fuzzy?),
+  *stragglers* (points stranded between the pieces: leaves that ran out of
+  steps before arriving), and the *spread* (too wide is overshooting, too
+  narrow is curves cut short);
+- **the number in each title** sums all of that up: the energy distance to
+  the real data (defined in [Stage 2](#stage-2-points-in-a-plane)), 0 when
+  indistinguishable. Two samples of the data itself score about 0, the
+  best any model can do.
+
+**The paths panel**: each orange line is one leaf's whole trip, from its
+grey starting point to its red landing point. Straight lines mean few
+steps suffice, since a straight path needs no corrections; curved ones
+need more.
+
+**The velocity-field panels** show the network itself, the wind map at
+three moments. At t = 0 every arrow points towards the middle: a point
+that is pure noise says nothing about where its path leads, so the best
+guess is the data's average. By t = 0.5 the arrows point towards the
+nearest part of the data, and by t = 0.9 they pull hard onto it. That
+progression is the "decision" being made over time: early steps settle
+roughly where a point is going, late steps settle exactly where.
+
+**The habit that makes them useful: ask what changed between two panels,
+and what didn't.** The figures change one thing at a time (the steps, the
+sampler, the training), so each difference can be traced to its cause.
+
+**An example: the largest change is from 1 step to 2.** In
+`moons-ddpm-steps.svg` the score falls from 6.7 to 0.19 between the first
+two panels, a factor of 35, while every later doubling of the steps gains
+a factor of 2 to 5. The cause is in the arithmetic of
+DDIM's jump: each one estimates the clean point by dividing by √ᾱ at the
+current step, so it multiplies any error in the network's noise
+prediction by √(1 − ᾱ)/√ᾱ. At the start of generation, ᾱ₁₀₀₀ ≈ 0.00004,
+so that factor is about 157:
+
+- **with 1 step**, the whole journey is one blind jump: a 157-fold error,
+  and no chance to correct it. The points land further from the data than
+  the noise they started as;
+- **with 2 steps**, the first jump goes only halfway, to step 500, where
+  the error is scaled back down to about 43-fold, and then a second step
+  looks again: the network sees where the first jump landed, predicts the
+  noise from there, and finishes from much nearer the truth.
+
+The first extra look matters most because it's the first chance to
+correct anything; after that, more steps refine an answer that's already
+roughly right. Flow's figure shows the same shape less extremely (0.81 to
+0.20): its single step lands everything on the mean, a bad but not wild
+answer, since flow's velocity has no division by a small number.
 
 ## Stage 2: points in a plane
 
