@@ -49,7 +49,7 @@ make test          # every check: the tests, a smoke test of every command, form
 make help          # every target
 ```
 
-The plots are SVG files; any browser opens them.
+The plots are SVG (Scalable Vector Graphics) files; any browser opens them.
 
 ## License
 

@@ -67,7 +67,7 @@ smoke: $(DIFFUSION) ## Every command end to end on a tiny model, in seconds (too
 # in step. Each stage adds its tests here as it arrives (PLAN.md, Design
 # for test).
 .PHONY: test
-test: test-rust smoke lint ## Run every check: the tests, the smoke test and lint.
+test: test-rust test-python smoke lint ## Run every check: the tests, the smoke test and lint.
 	@printf "\nAll checks passed.\n"
 
 .PHONY: test-rust
@@ -75,8 +75,13 @@ test-rust: ## Rust unit tests.
 	$(call hdr,$@)
 	cargo test --release -q $(CRATE) $(CARGO_FEATURE_FLAGS)
 
+.PHONY: test-python
+test-python: ## Python unit tests for the tools.
+	$(call hdr,$@)
+	python3 -m unittest discover -s tools
+
 .PHONY: lint
-lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links.
+lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links, acronyms defined.
 	$(call hdr,$@)
 	cargo fmt $(CRATE) -- --check
 	cargo clippy --release -q $(CRATE) --all-targets $(CARGO_FEATURE_FLAGS) -- -D warnings
@@ -84,6 +89,7 @@ lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links.
 		echo "pylint tools/*.py"; pylint --score=n tools/*.py; \
 	else echo "pylint not installed: skipped (pip install pylint)"; fi
 	python3 tools/toc.py --check PLAN.md
+	python3 tools/acronyms.py PLAN.md README.md --known tools/acronyms-known.txt
 
 .PHONY: toc
 toc: ## Update PLAN.md's table of contents and check its internal links.

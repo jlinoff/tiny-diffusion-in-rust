@@ -234,7 +234,7 @@ the example changes at every sampling step.
    each t, which patches attend to which, and how early in generation the
    digit's identity is settled.
 6. **Text, later** (optional): a masked diffusion language model on
-   TinyStories, reusing tiny-llm-in-rust's tokenizer, compared with
+   TinyStories (tiny-llm-in-rust's corpus of short, simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size (see [Text, later](#text-later)).
 
 Each stage ends the way tiny-llm-in-rust's did: predictions written down
@@ -250,7 +250,7 @@ top), and checked by its own tests, which came along:
 | `tensor.rs` | row-major matrices, generic over f32 and f64; products split across threads, each element summed in a fixed order |
 | `tape.rs` | reverse-mode automatic differentiation on whole matrices, every operation checked against finite differences |
 | `blas.rs` | optional Apple Accelerate for the large f32 products (`--features blas`, the default on macOS) |
-| `rng.rs` | SplitMix64, with independent streams and normal draws |
+| `rng.rs` | SplitMix64 (a small, fast random number generator), with independent streams and normal draws |
 | `safetensors.rs` | reading and writing model files, checked against one Hugging Face wrote |
 
 Copying rather than depending on tiny-llm-in-rust keeps each project
@@ -302,6 +302,10 @@ gets:
   whatever the number of threads.
 - **files round-trip**: the image and plot writers produce what a reader
   gets back.
+- **the documents themselves**: PLAN.md's table of contents and links, and
+  every acronym in PLAN.md and README.md defined where it's first used
+  (`tools/acronyms.py`; names that need no definition are listed in
+  `tools/acronyms-known.txt`).
 
 ## Stage 2: points in a plane
 
@@ -477,8 +481,8 @@ noise is **masking** instead: a special MASK token replacing a real one.
   masked position: a cross-entropy loss over the masked positions only.
   The network is a transformer whose attention is **bidirectional**: every
   position sees every other, masked or not, before and after it. This is
-  a **masked diffusion language model** (Sahoo et al. 2024); LLaDA
-  showed the recipe works at the scale of billions of parameters (Nie et
+  a **masked diffusion language model** (Sahoo et al. 2024); LLaDA (Large
+  Language Diffusion with mAsking) showed the recipe works at the scale of billions of parameters (Nie et
   al. 2025).
 - **Generation**: start from a sequence that's all MASK and run a fixed
   number of steps. At each, the model predicts every masked position at
@@ -570,8 +574,8 @@ here as they come up, and stay open until settled.
 2. **Images are written as PNG** (Portable Network Graphics). Decided.
    PNG is what every viewer opens,
    GitHub included. A minimal writer needs no library: uncompressed
-   ("stored") deflate blocks, with the CRC-32 and Adler-32 checksums the
-   format requires, a few dozen lines, tested by checking those checksums
+   ("stored") deflate blocks, with the checksums the format requires
+   (CRC-32, a cyclic redundancy check, and Adler-32), a few dozen lines, tested by checking those checksums
    and reading the pixels back. (PGM, a plain grayscale format, was the
    simpler alternative, but GitHub doesn't display it.)
 3. **The DiT's size is set on the command line, the first guess as the
@@ -602,6 +606,7 @@ tiny-diffusion-in-rust/
 │   └── tests/data # test fixtures
 ├── docs/          # figures for this file and the README
 ├── tools/         # toc.py: this file's table of contents and link check;
+│                  # acronyms.py: every acronym defined at first use;
 │                  # ci/smoke.sh: every command end to end, in seconds
 ├── .github/       # workflows/main.yaml: formatting, lint and tests, on Linux and macOS
 ├── data/          # downloaded datasets (git-ignored)
