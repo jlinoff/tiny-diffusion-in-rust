@@ -44,7 +44,8 @@ names are explained where they first appear.
   - [Running it](#running-it-1)
   - [Choosing the patch size](#choosing-the-patch-size)
   - [Predictions](#predictions-1)
-  - [Results so far](#results-so-far)
+  - [Stage 3 results](#stage-3-results)
+  - [What stage 3 taught](#what-stage-3-taught)
 - [Text, later](#text-later)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
@@ -315,6 +316,15 @@ gets:
   every acronym in PLAN.md and README.md defined where it's first used
   (`tools/acronyms.py`; names that need no definition are listed in
   `tools/acronyms-known.txt`).
+- **formulas in the documents**: where PLAN.md gives a formula the code
+  must obey, such as the DiT's parameter count, a test checks it
+  against the code (`parameter_formulas_in_plan_md`).
+
+Predictions are tests of understanding rather than of code, and they
+follow a convention too: each stage writes its predictions before
+measuring, records the misses beside the hits, and, from stage 4 on,
+gives each prediction its mechanism and a quick numeric check of that
+mechanism (why: [What stage 3 taught](#what-stage-3-taught), 7).
 
 ## How to read the figures
 
@@ -747,7 +757,7 @@ What the choice trades:
   break at the patch boundaries. (Measured, this mattered less than
   argued here: with d = 128, a token has more numbers than a 7 × 7
   patch has pixels, so nothing needs packing, and the 7 × 7 run lost
-  its seams by the end: [Results so far](#results-so-far), prediction
+  its seams by the end: [Stage 3 results](#stage-3-results), prediction
   6.)
 - **What attention can relate.** Attention connects patches. With small
   patches, how neighbouring bits of a stroke fit together is attention's
@@ -792,7 +802,7 @@ Written before any images were generated:
    strokes stepped or misaligned at the 7 × 7 boundaries, which 4 × 4
    patches don't show as clearly.
 
-### Results so far
+### Stage 3 results
 
 **Speed (prediction 1): right.** On the M4, the default DiT trains on
 MNIST at about 435 images per second, 0.29 seconds a step of 128, so
@@ -935,6 +945,98 @@ defines the target velocity field by the data, not the network, so two
 networks that learn it well enough carry the same noise to the same
 image. Which noise becomes which digit is a property of the data and
 the method, not of the model.
+
+**Fashion-MNIST** (the default DiT, 1 h 32 min, as long as the digits
+take; mean loss over the last 500 steps 0.2330). The loss can't be
+compared with the digits' 0.1774: the floor depends on the data, and
+clothing lights far more of the image, more variably, than a thin
+stroke does, so even a perfect model would score higher on it.
+
+- **5, Fashion-MNIST is harder: wrong as written, right about detail.**
+  As objects, the samples look *better* than the digits: by a quick
+  count about 54 of the 64 are clearly a sweater, trousers, a T-shirt,
+  a dress, a boot, a sneaker, a sandal or a bag, against about 40 clear
+  digits, and nearly every silhouette is right. What is worse is fine
+  detail. The real images carry printed text, faces, stripes and
+  patterns; the samples turn these into grey mottling. Sandal straps
+  and heels come out tangled, and a handful of samples are hybrids or
+  garbled (a bag that is half shoe, a shape that is no garment at all).
+
+  Why the prediction failed: it judged difficulty by the data's
+  complexity, but what we judge is recognizability, and that depends
+  on the class. A digit is a few thin strokes whose topology is its
+  identity: one stroke too short turns a 4 into a 9 or into nothing. A
+  garment is a large, centred silhouette, and its class survives a
+  wrong edge or a smeared print. So clothing is harder to reproduce
+  exactly and easier to reproduce recognizably.
+
+The progress rows settle coarse to fine more plainly still: the
+silhouette is visible by t = 0.375 to 0.5, earlier than the digits,
+because a large bright region is most of the image, and textures and
+prints are the last thing to appear.
+
+### What stage 3 taught
+
+Beyond the scores, seven things.
+
+1. **The image is decided early; the rest of the path cleans it up.**
+   At every checkpoint, with both patch sizes and on both data sets,
+   the progress rows fix what the image is, and where, by t = 0.5. The
+   fewer-steps ladder shows the same from the other side: 1 step gives
+   the mean image, 2 steps a tangle of candidates, 4 steps ghost
+   strokes, 10 steps nearly the same as 50. A sampler with too few
+   steps fails by leaving choices unresolved, not by blurring, and
+   because flow matching's learned paths are nearly straight, 10 steps
+   are almost free.
+2. **Which noise becomes which image belongs to the data and the
+   method, not the model.** Two architectures, trained separately,
+   carried the same noise to mostly the same digits; within one run,
+   noise near a boundary between digits changed sides as training moved
+   the field. The network approximates a map the data and flow matching
+   already define.
+3. **Loss is a weak guide to what the eye sees**, three ways. The last
+   10,000 steps of the 4 × 4 run cut its loss by only 5% and took clear
+   digits from about half to about two-thirds; 4 × 4 and 7 × 7 differ by
+   9% in loss and not at all to the eye; and the loss can't compare
+   data sets, since its floor depends on the data. The loss averages
+   the velocity's error over every pixel and every t, and much of that
+   error lives in the noisy middle of the path, where it never reaches
+   the finished image. So a run must be judged by looking at it. (Larger
+   projects use measures designed to agree with human judgement of
+   images for this reason.)
+4. **What is cheap is learned first.** On digits, the early checkpoints
+   had MNIST's local look, black background and fully white strokes,
+   long before the strokes joined into digits: local statistics are
+   cheap, agreement between distant patches is attention's work and
+   comes later. On clothing, the silhouette, most of the image, comes
+   first and the prints last. (Fashion was only sampled at the end, so
+   this is seen in its progress rows, not in its checkpoints.)
+5. **"Harder" depends on what is judged.** Clothing is harder to
+   reproduce exactly and easier to reproduce recognizably, because a
+   digit's identity is the topology of a few strokes and a garment's is
+   a large silhouette (prediction 5).
+6. **Lessons from the literature don't transfer across scales by
+   themselves.** The DiT paper's case for small patches is sound for
+   its large images of compressed features, where compute is the limit;
+   on 28 × 28 pixels with tokens of 128 numbers, a 7 × 7 patch's 49
+   pixels fit with room to spare, and 7 × 7 patches gave the same images
+   for 28% of the compute (prediction 6).
+7. **How the predictions fared, and a convention that follows.** The
+   predictions that held were extrapolated from measurements of this
+   code: the speed, from measured throughput (and the run times to the
+   minute); coarse to fine, seen already in stage 2. The ones that
+   failed borrowed a conclusion by analogy: DDPM's few-step blur for a
+   flow model, the DiT paper's patch sizes for another regime,
+   "undertrained image models are blurry" for a model that predicts a
+   velocity, "complex data looks worse" for a judgement of
+   recognizability. Prediction 6 needed only one line of arithmetic
+   (128 > 49) to be caught. So from stage 4 on, each prediction states
+   its mechanism and a quick numeric check of it, before the run.
+
+And one about the engineering: sampling with a fixed seed was chosen so
+that successive peeks show the training alone. It is also what made the
+comparisons of 1 and 2 possible, across checkpoints and across models:
+an unplanned payoff of designing for test.
 
 ## Text, later
 

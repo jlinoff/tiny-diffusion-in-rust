@@ -17,9 +17,10 @@ the paths from noise to data, and the learned velocity field. Stage 3
 trains a 1.8-million-parameter diffusion transformer on the MNIST
 handwritten digits (a classic set of 60,000 small images) in
 about an hour and a half on a laptop; about two-thirds of its samples
-are clear digits. The comparisons with larger patches and with clothing
-images are still to run. Every stage arrives with its tests, and
-`make test` and continuous integration have run from the first commit.
+are clear digits. Larger patches give the same images for about a
+quarter of the compute, and the same model draws recognizable clothing.
+Every stage arrives with its tests, and `make test` and continuous
+integration have run from the first commit.
 
 ![Moons: data, generated points, their paths from noise, and the learned velocity field](docs/moons-flow.svg)
 
