@@ -160,6 +160,8 @@ guidance: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Measure GUIDE_MODEL at
 	@test -f $(GUIDE_MODEL) || { echo "no $(GUIDE_MODEL) yet: make digits-cond first"; exit 1; }
 	$(call hdr,measure $(GUIDE_MODEL) by guidance scale)
 	$(DIFFUSION) measure --model $(GUIDE_MODEL) --classifier $< --guidance $(subst $(space),$(comma),$(strip $(GUIDANCE)))
+	$(call hdr,does the noise decide the style? (prediction 6))
+	$(DIFFUSION) style --model $(GUIDE_MODEL)
 	$(call hdr,grids by guidance scale)
 	for w in $(GUIDANCE); do \
 		$(DIFFUSION) sample-img --model $(GUIDE_MODEL) --classes --n 8 --guidance $$w \

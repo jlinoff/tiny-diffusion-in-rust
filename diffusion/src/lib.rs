@@ -22,6 +22,7 @@ pub mod mlp;
 pub mod optim;
 pub mod rng;
 pub mod safetensors;
+pub mod style;
 pub mod svg;
 pub mod tape;
 pub mod tensor;

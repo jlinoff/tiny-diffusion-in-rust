@@ -8,8 +8,9 @@
 //!
 //! Stage 3, images: `train-img`, `sample-img`.
 //!
-//! Stage 4, conditioning: `classifier` trains the measuring instrument, and
-//! `measure` uses it on a model's samples.
+//! Stage 4, conditioning: `classifier` trains the measuring instrument,
+//! `measure` uses it on a model's samples, and `style` asks whether the
+//! noise decides how a digit is written.
 
 use clap::{Parser, Subcommand};
 use mini_diffusion::classify::{
@@ -270,6 +271,22 @@ enum Command {
         guidance: Vec<f32>,
         #[arg(long, default_value = "data")]
         data_dir: PathBuf,
+    },
+    /// For a model with labels: does the starting noise decide the style?
+    /// Draws every class from the same noises and correlates slant,
+    /// position and ink between classes (PLAN.md, Stage 4, prediction 6).
+    Style {
+        #[arg(long)]
+        model: PathBuf,
+        /// Noises: each is drawn once as every class.
+        #[arg(long, default_value_t = 100)]
+        n: usize,
+        #[arg(long, default_value_t = 50)]
+        steps: usize,
+        #[arg(long, default_value_t = 2)]
+        seed: u64,
+        #[arg(long, default_value_t = 1.0)]
+        guidance: f32,
     },
 }
 
@@ -849,7 +866,63 @@ fn run(command: Command) -> Result<(), String> {
             }
             Ok(())
         }
+        Command::Style {
+            model,
+            n,
+            steps,
+            seed,
+            guidance,
+        } => {
+            let f = safetensors::read(&model)?;
+            let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
+            println!("{}", describe_checkpoint(&model, &f.metadata));
+            style_table(&dit, n, steps, seed, guidance)
+        }
     }
+}
+
+/// Prediction 6: draw every class from the same `k` noises, and correlate
+/// each style property between classes, with the noise shared and not.
+fn style_table(dit: &Dit<f32>, k: usize, steps: usize, seed: u64, w: f32) -> Result<(), String> {
+    use mini_diffusion::style::{same_and_different, styles};
+    let l = dit.cfg.labels;
+    if l < 2 {
+        return Err("style needs a model trained with --conditional".into());
+    }
+    let shape = dit.cfg.image;
+    let base = noise(k, shape.values(), &mut Rng::new(seed));
+    let mut data = Vec::with_capacity(l * base.data.len());
+    for _ in 0..l {
+        data.extend_from_slice(&base.data);
+    }
+    let ys: Vec<usize> = (0..l).flat_map(|y| std::iter::repeat_n(y, k)).collect();
+    let start = Instant::now();
+    let (out, _) = euler(
+        Mat::from_vec(l * k, shape.values(), data),
+        steps,
+        |x, t| dit.predict_guided(x, t, &ys, w),
+        false,
+    );
+    println!(
+        "{} images: {k} noises, each drawn as all {l} classes, guidance w = {w}, {steps} Euler steps, in {}",
+        l * k,
+        duration(start.elapsed().as_secs_f64())
+    );
+    let st = styles(&out, shape);
+    println!("  correlation between two classes drawn from   the same noise   different noise");
+    type Property = fn(&mini_diffusion::style::Style) -> f64;
+    let props: [(&str, Property); 4] = [
+        ("slant", |s| s.slant),
+        ("centre, across", |s| s.cx),
+        ("centre, down", |s| s.cy),
+        ("ink (thickness)", |s| s.ink),
+    ];
+    for (name, f) in props {
+        let v: Vec<f64> = st.iter().map(f).collect();
+        let (same, diff) = same_and_different(&v, l, k);
+        println!("    {name:<16}{:>42.2}{:>18.2}", same, diff);
+    }
+    Ok(())
 }
 
 /// The measurement table for a model with labels: for each guidance scale,

@@ -1247,8 +1247,18 @@ Then the conditioning:
   from 0.94 to 0.87, and guided sampling took twice as long. So the
   machinery does what it should, before the real run.
 
-Prediction 6's slant measurement isn't built yet: it reads the samples
-of the trained model, so it can follow the run without retraining.
+- `style.rs` and `diffusion style`, for prediction 6: every class drawn
+  from the same noises (100 by default), and for each image its slant,
+  its centre and its ink, from the image's moments: the ink-weighted
+  mean position, and the slant as the strokes' shift right per row
+  upwards, −cov(x, y)/var(y), positive for a right lean. Then, for each
+  property, the correlation between two classes' images averaged over
+  every pair of classes: once with the noise shared, and once with one
+  class's images shifted by one noise, so nothing is shared. Tested on
+  upright and leaning lines, and on correlations worked by hand. On the
+  shapes model above, the shared-noise correlations were 0.86 to 0.92
+  and the others −0.07 to −0.19: the noise decides a shape's place and
+  size there. Whether it decides a digit's slant is prediction 6.
 
 ### Running it
 
@@ -1257,7 +1267,7 @@ of the trained model, so it can follow the run without retraining.
 | `make classifier` | downloads MNIST's test images, trains the classifier (5,000 steps of 128, about 11 passes over the data), reports its accuracy: a minute or two |
 | `make measure-stage3` | the instrument on stage 3's models, 1,000 samples each (prediction 3) |
 | `make digits-cond` | the DiT with labels, 7 × 7 patches (about 26 minutes); samples in `out/digits-cond.png` |
-| `make guidance` | the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8, and a grid per scale, `out/digits-cond-w2.png` and so on (`GUIDE_MODEL=` picks another model) |
+| `make guidance` | the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8, the style correlations, and a grid per scale, `out/digits-cond-w2.png` and so on (`GUIDE_MODEL=` picks another model) |
 | `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours); then `make guidance GUIDE_MODEL=out/digits-cond-p4.safetensors` |
 
 To measure any model directly:
