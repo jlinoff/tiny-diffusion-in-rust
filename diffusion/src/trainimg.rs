@@ -54,13 +54,31 @@ impl Source {
 
     /// `n` images, from a random stream fixed by the seed and `stream`.
     pub fn batch(&self, n: usize, seed: u64, stream: u64) -> Mat<f32> {
+        self.labelled_batch(n, seed, stream).0
+    }
+
+    /// The same images, with their labels.
+    pub fn labelled_batch(&self, n: usize, seed: u64, stream: u64) -> (Mat<f32>, Vec<usize>) {
         let mut rng = Rng::stream(seed, stream);
         match self {
             Source::Fixed(s) => {
                 let rows: Vec<usize> = (0..n).map(|_| rng.below(s.pixels.rows)).collect();
-                s.batch(&rows)
+                let labels = rows.iter().map(|&r| s.labels[r] as usize).collect();
+                (s.batch(&rows), labels)
             }
-            Source::Shapes { size, channels } => shapes(n, *size, *channels, rng.next_u64()).pixels,
+            Source::Shapes { size, channels } => {
+                let set = shapes(n, *size, *channels, rng.next_u64());
+                (set.pixels, set.labels.iter().map(|&l| l as usize).collect())
+            }
+        }
+    }
+
+    /// How many classes the labels run over: 10 for the digits and the
+    /// clothing, 3 for the shapes.
+    pub fn classes(&self) -> usize {
+        match self {
+            Source::Fixed(s) => 1 + *s.labels.iter().max().unwrap_or(&0) as usize,
+            Source::Shapes { .. } => 3,
         }
     }
 }
@@ -107,6 +125,20 @@ pub struct ImgTrainConfig {
     pub learning_rate: f32,
     pub warmup: u64,
     pub seed: u64,
+    /// For a model with labels: the probability that an image's label is
+    /// replaced by "no label" (label dropout, stage 4).
+    pub drop: f32,
+}
+
+/// Replace each label by `none` with probability `drop`, from a random
+/// stream of its own (so a model without labels trains exactly as before).
+pub fn drop_labels(labels: &mut [usize], none: usize, drop: f32, seed: u64, stream: u64) {
+    let mut rng = Rng::stream(seed ^ 0x1ABE1, stream);
+    for y in labels.iter_mut() {
+        if (rng.unit() as f32) < drop {
+            *y = none;
+        }
+    }
 }
 
 impl ImgTrainConfig {
@@ -140,15 +172,28 @@ pub fn train(
     );
     let mut adam = Adam::new(&model.params);
     let mut losses = Vec::with_capacity(c.steps as usize);
+    let classes = model.cfg.labels;
+    if classes > 0 {
+        assert_eq!(
+            classes,
+            source.classes(),
+            "the model's labels must match the data's"
+        );
+    }
     for step in 1..=c.steps {
-        let x1 = source.batch(c.batch, c.seed, step);
+        let (x1, mut labels) = source.labelled_batch(c.batch, c.seed, step);
+        if classes == 0 {
+            labels.clear();
+        } else {
+            drop_labels(&mut labels, classes, c.drop, c.seed, step);
+        }
         let mut rng = Rng::stream(c.seed ^ 0x5EED, step);
         let x0 = noise(c.batch, shape.values(), &mut rng);
         let t: Vec<f32> = (0..c.batch).map(|_| rng.unit() as f32).collect();
         let xt = interpolate(&x0, &x1, &t);
         let tgt = patchify(&target(&x0, &x1), shape, patch);
         let mut tape = Tape::new();
-        let (out, vars) = model.forward(&mut tape, patchify(&xt, shape, patch), &t);
+        let (out, vars) = model.forward(&mut tape, patchify(&xt, shape, patch), &t, &labels);
         let loss = tape.mse(out, &tgt);
         let value = tape.value(loss).data[0];
         tape.backward(loss);
@@ -180,6 +225,7 @@ mod tests {
             blocks: 2,
             heads: 2,
             freqs: 2,
+            labels: 0,
         }
     }
 
@@ -190,6 +236,7 @@ mod tests {
             learning_rate: 2e-3,
             warmup: 10,
             seed: 1,
+            drop: 0.1,
         }
     }
 
@@ -210,6 +257,39 @@ mod tests {
         for (g, w) in got.iter().zip(GOLDEN) {
             assert!((g - w).abs() < 2e-3, "{got:?}, golden {GOLDEN:?}");
         }
+    }
+
+    /// The same for a model with labels (stage 4), with label dropout.
+    #[test]
+    fn golden_losses_with_labels() {
+        // The first equals the unlabelled model's: untrained, both predict 0.
+        const GOLDEN: [f32; 3] = [2.113295, 1.625234, 1.41897];
+        let source = Source::Shapes {
+            size: 8,
+            channels: 1,
+        };
+        let mut c = small();
+        c.labels = 3;
+        let mut m = Dit::new(c, 1);
+        let l = train(&mut m, &source, &cfg(40), 0, |_, _| {}, |_, _| {});
+        let got = [l[0], l[19], l[39]];
+        println!("labelled dit golden: {got:?}");
+        for (g, w) in got.iter().zip(GOLDEN) {
+            assert!((g - w).abs() < 2e-3, "{got:?}, golden {GOLDEN:?}");
+        }
+    }
+
+    /// Label dropout replaces about the requested share of labels, and only
+    /// with "no label".
+    #[test]
+    fn label_dropout_rate() {
+        let mut ys: Vec<usize> = (0..20000).map(|i| i % 10).collect();
+        drop_labels(&mut ys, 10, 0.1, 3, 1);
+        let dropped = ys.iter().filter(|&&y| y == 10).count() as f64 / 20000.0;
+        assert!((dropped - 0.1).abs() < 0.01, "{dropped}");
+        let mut none = vec![4usize; 1000];
+        drop_labels(&mut none, 10, 0.0, 3, 1);
+        assert!(none.iter().all(|&y| y == 4));
     }
 
     /// Training lowers the loss: a smoke check that the DiT learns at all.
@@ -234,6 +314,9 @@ mod tests {
             .unwrap();
         assert!(e.contains("make data/mnist"), "{e}");
         let s = Source::open("shapes", Path::new("."), 12, 3).unwrap();
+        assert_eq!(s.classes(), 3);
+        let (imgs, ys) = s.labelled_batch(4, 1, 7);
+        assert_eq!((imgs, ys.len()), (s.batch(4, 1, 7), 4));
         assert_eq!(s.shape().values(), 12 * 12 * 3);
         assert_eq!(s.batch(4, 1, 7), s.batch(4, 1, 7));
         assert_ne!(s.batch(4, 1, 7), s.batch(4, 1, 8));

@@ -19,6 +19,12 @@
 //! starts as the identity: an untrained DiT predicts exactly 0, and training
 //! opens each block gradually. The image's size, channels and patch size are
 //! part of the configuration, never constants (Decision 5).
+//!
+//! Stage 4 adds an optional label (which digit to draw): a table of L + 1
+//! learned vectors, one per class and one meaning "no label", whose row
+//! for each image is added to its time vector before the SiLU, so the
+//! label reaches every block through the same adaLN as the time. A model
+//! with no labels (L = 0) is exactly stage 3's.
 
 use crate::image::{check_patch, patch_count, patchify, unpatchify, Shape};
 use crate::mlp::time_features;
@@ -39,6 +45,9 @@ pub struct DitConfig {
     pub heads: usize,
     /// Sine-cosine pairs in the time embedding.
     pub freqs: usize,
+    /// Classes the model can be asked for (stage 4); 0 for a model without
+    /// labels. Label L itself means "no label".
+    pub labels: usize,
 }
 
 impl DitConfig {
@@ -96,6 +105,11 @@ impl DitConfig {
         v.push(("final.ada.b".into(), 1, 2 * d));
         v.push(("out.w".into(), d, pv));
         v.push(("out.b".into(), 1, pv));
+        if self.labels > 0 {
+            // Last, so the other weights keep their places and their
+            // random initial values.
+            v.push(("label".into(), self.labels + 1, d));
+        }
         v
     }
 
@@ -120,7 +134,7 @@ impl<T: Float> Dit<T> {
             .iter()
             .map(|(name, r, c)| {
                 let zero = name.contains(".b") || name.contains("ada") || name.starts_with("out.");
-                let std = if name == "pos" {
+                let std = if name == "pos" || name == "label" {
                     0.02
                 } else {
                     1.0 / (*r as f64).sqrt()
@@ -142,12 +156,26 @@ impl<T: Float> Dit<T> {
     }
 
     /// The forward pass on a tape: `patches` is (B·T) × (p·p·c), the noisy
-    /// images cut into patches; `t` one time per image. Returns the
-    /// predicted velocity per patch, and the parameters' variables.
-    pub fn forward(&self, tape: &mut Tape<T>, patches: Mat<T>, t: &[f32]) -> (Var, Vec<Var>) {
+    /// images cut into patches; `t` one time per image; `labels` one label
+    /// per image (0 to L, L meaning none) for a model with labels, empty
+    /// for one without. Returns the predicted velocity per patch, and the
+    /// parameters' variables.
+    pub fn forward(
+        &self,
+        tape: &mut Tape<T>,
+        patches: Mat<T>,
+        t: &[f32],
+        labels: &[usize],
+    ) -> (Var, Vec<Var>) {
         let c = self.cfg;
         let (d, seq, b) = (c.width, c.tokens(), t.len());
         assert_eq!(patches.rows, b * seq, "one time per image");
+        if c.labels == 0 {
+            assert!(labels.is_empty(), "this model has no labels");
+        } else {
+            assert_eq!(labels.len(), b, "one label per image");
+            assert!(labels.iter().all(|&y| y <= c.labels), "labels run 0 to L");
+        }
         let p: Vec<Var> = self.params.iter().map(|m| tape.leaf(m.clone())).collect();
         let lin = |tape: &mut Tape<T>, x: Var, w: usize| {
             let z = tape.matmul(x, p[w]);
@@ -166,7 +194,12 @@ impl<T: Float> Dit<T> {
         let tl = tape.leaf(tf);
         let h = lin(tape, tl, 3);
         let h = tape.silu(h);
-        let cond = lin(tape, h, 5);
+        let mut cond = lin(tape, h, 5);
+        if c.labels > 0 {
+            // The label's vector joins the time's.
+            let e = tape.gather(p[p.len() - 1], labels);
+            cond = tape.add(cond, e);
+        }
         let cond = tape.silu(cond);
         for l in 0..c.blocks {
             let w = 7 + 10 * l;
@@ -213,15 +246,47 @@ impl<T: Float> Dit<T> {
 }
 
 impl Dit<f32> {
-    /// The predicted velocity for images x (n × h·w·c), all at time t.
+    /// The predicted velocity for images x (n × h·w·c), all at time t,
+    /// without a label (for a model with labels: the "no label" row).
     pub fn predict(&self, x: &Mat<f32>, t: f32) -> Mat<f32> {
+        let none = vec![self.cfg.labels; if self.cfg.labels > 0 { x.rows } else { 0 }];
+        self.predict_labels(x, t, &none)
+    }
+
+    /// The velocity with one label per image (empty for a model without
+    /// labels).
+    pub fn predict_labels(&self, x: &Mat<f32>, t: f32, labels: &[usize]) -> Mat<f32> {
         let mut tape = Tape::new();
         let (out, _) = self.forward(
             &mut tape,
             patchify(x, self.cfg.image, self.cfg.patch),
             &vec![t; x.rows],
+            labels,
         );
         unpatchify(tape.value(out), self.cfg.image, self.cfg.patch)
+    }
+
+    /// Classifier-free guidance: v_uncond + w·(v_cond − v_uncond), both
+    /// velocities from one pass over the images twice. w = 1 is the plain
+    /// conditional velocity and w = 0 the unconditional one, each computed
+    /// alone.
+    pub fn predict_guided(&self, x: &Mat<f32>, t: f32, labels: &[usize], w: f32) -> Mat<f32> {
+        assert!(self.cfg.labels > 0, "guidance needs a model with labels");
+        if w == 1.0 {
+            return self.predict_labels(x, t, labels);
+        }
+        if w == 0.0 {
+            return self.predict(x, t);
+        }
+        let n = x.rows;
+        let mut both = x.data.clone();
+        both.extend_from_slice(&x.data);
+        let mut ys = labels.to_vec();
+        ys.extend(std::iter::repeat_n(self.cfg.labels, n));
+        let v = self.predict_labels(&Mat::from_vec(2 * n, x.cols, both), t, &ys);
+        let (vc, vu) = v.data.split_at(n * x.cols);
+        let out = vc.iter().zip(vu).map(|(&c, &u)| u + w * (c - u)).collect();
+        Mat::from_vec(n, x.cols, out)
     }
 
     pub fn to_file(&self, mut metadata: BTreeMap<String, String>) -> File {
@@ -235,6 +300,7 @@ impl Dit<f32> {
             ("blocks", c.blocks),
             ("heads", c.heads),
             ("freqs", c.freqs),
+            ("labels", c.labels),
         ] {
             metadata.insert(k.into(), v.to_string());
         }
@@ -270,6 +336,12 @@ impl Dit<f32> {
             blocks: num("blocks")?,
             heads: num("heads")?,
             freqs: num("freqs")?,
+            // Files from stage 3 have no labels.
+            labels: if f.metadata.contains_key("labels") {
+                num("labels")?
+            } else {
+                0
+            },
         };
         cfg.check()?;
         let mut params = Vec::new();
@@ -309,6 +381,7 @@ mod tests {
             blocks: 2,
             heads: 2,
             freqs: 2,
+            labels: 0,
         }
     }
 
@@ -348,6 +421,10 @@ mod tests {
             assert_eq!(patch + pos + time + blocks + last, c.parameters());
             let closed = b * (18 * d * d + 15 * d) + 3 * d * d + (2 * v + n + 2 * k + 6) * d + v;
             assert_eq!(closed, c.parameters());
+            // Stage 4: labels add a table of L + 1 rows of d.
+            let mut cl = c;
+            cl.labels = 10;
+            assert_eq!(cl.parameters(), c.parameters() + 11 * d);
         }
         let mut c = cfg(28, 28, 1, 4);
         (c.width, c.blocks, c.heads, c.freqs) = (128, 6, 4, 8);
@@ -356,6 +433,8 @@ mod tests {
         assert_eq!(c.parameters(), 1_847_601);
         (c.patch, c.width) = (4, 256);
         assert_eq!(c.parameters(), 7_323_920);
+        (c.patch, c.width, c.labels) = (7, 128, 10);
+        assert_eq!(c.parameters(), 1_849_009);
     }
 
     /// adaLN-Zero: every gate and the output layer start at zero, so the
@@ -365,6 +444,11 @@ mod tests {
         let m = Dit::<f32>::new(cfg(8, 8, 1, 4), 2);
         let x = Mat::from_vec(2, 64, (0..128).map(|i| (i as f32 * 0.37).sin()).collect());
         assert!(m.predict(&x, 0.3).data.iter().all(|&v| v == 0.0));
+        let mut c = cfg(8, 8, 1, 4);
+        c.labels = 3;
+        let m = Dit::<f32>::new(c, 2);
+        let v = m.predict_guided(&x, 0.3, &[0, 2], 2.5);
+        assert!(v.data.iter().all(|&v| v == 0.0));
     }
 
     /// Every weight's gradient through the whole DiT, against finite
@@ -372,7 +456,20 @@ mod tests {
     /// every path carries a gradient.
     #[test]
     fn gradients_match_finite_differences() {
-        let c = cfg(4, 4, 1, 2); // 4 tokens of 4 values
+        gradient_check(0, &[]);
+    }
+
+    /// The same with labels: the label table's rows get their gradients
+    /// too (rows 1 and 3 used, of 0 to 3; unused rows get zero, checked
+    /// alike).
+    #[test]
+    fn gradients_with_labels_match_finite_differences() {
+        gradient_check(3, &[1, 3]);
+    }
+
+    fn gradient_check(labels: usize, ys: &[usize]) {
+        let mut c = cfg(4, 4, 1, 2); // 4 tokens of 4 values
+        c.labels = labels;
         let mut m = Dit::<f64>::new(c, 3);
         let mut rng = Rng::new(4);
         for p in m.params.iter_mut() {
@@ -385,12 +482,12 @@ mod tests {
         let t = [0.2f32, 0.7];
         let loss_of = |m: &Dit<f64>| {
             let mut tp = Tape::new();
-            let (o, _) = m.forward(&mut tp, inp.clone(), &t);
+            let (o, _) = m.forward(&mut tp, inp.clone(), &t, ys);
             let l = tp.mse(o, &target);
             tp.value(l).data[0]
         };
         let mut tp = Tape::new();
-        let (o, vars) = m.forward(&mut tp, inp.clone(), &t);
+        let (o, vars) = m.forward(&mut tp, inp.clone(), &t, ys);
         let l = tp.mse(o, &target);
         tp.backward(l);
         let grads: Vec<Mat<f64>> = vars.iter().map(|&v| tp.take_grad(v)).collect();
@@ -447,6 +544,56 @@ mod tests {
         let b = m.predict(&x, 0.4);
         assert_eq!(a.row(0), b.row(0));
         assert_ne!(a.row(1), b.row(1));
+    }
+
+    fn labelled(seed: u64) -> Dit<f32> {
+        let mut c = cfg(8, 8, 1, 4);
+        c.labels = 3;
+        let mut m = Dit::<f32>::new(c, seed);
+        let mut rng = Rng::new(seed + 1);
+        for x in m.params.iter_mut().flat_map(|p| p.data.iter_mut()) {
+            *x += 0.1 * rng.normal() as f32;
+        }
+        m
+    }
+
+    /// Guidance by construction (PLAN.md, Stage 4, How it will be tested):
+    /// w = 0 is the unconditional velocity, w = 1 the conditional one, and
+    /// the batched computation for other w is linear in w between them.
+    #[test]
+    fn guidance_by_construction() {
+        let m = labelled(9);
+        let mut rng = Rng::new(10);
+        let x = Mat::from_vec(2, 64, (0..128).map(|_| rng.normal() as f32).collect());
+        let ys = [0, 2];
+        let vu = m.predict_labels(&x, 0.6, &[3, 3]);
+        let vc = m.predict_labels(&x, 0.6, &ys);
+        assert_eq!(m.predict_guided(&x, 0.6, &ys, 0.0), vu);
+        assert_eq!(m.predict_guided(&x, 0.6, &ys, 1.0), vc);
+        assert_eq!(m.predict(&x, 0.6), vu);
+        assert_ne!(vu, vc, "the label changes the velocity");
+        for w in [0.5f32, 2.0, 4.0] {
+            let g = m.predict_guided(&x, 0.6, &ys, w);
+            for ((a, u), c) in g.data.iter().zip(&vu.data).zip(&vc.data) {
+                assert!((a - (u + w * (c - u))).abs() < 1e-4, "w = {w}");
+            }
+        }
+    }
+
+    /// A file without labels in its metadata (stage 3's) loads as a model
+    /// without labels, and predicts the same as the model that wrote it.
+    #[test]
+    fn stage_3_files_still_load() {
+        let m = Dit::<f32>::new(cfg(8, 8, 1, 4), 11);
+        let mut f = m.to_file(BTreeMap::new());
+        f.metadata.remove("labels");
+        let back = Dit::from_file(&f).unwrap();
+        assert_eq!(back.cfg.labels, 0);
+        let x = Mat::from_vec(1, 64, vec![0.3; 64]);
+        assert_eq!(back.predict(&x, 0.5), m.predict(&x, 0.5));
+        let l = labelled(12);
+        let back = Dit::from_file(&l.to_file(BTreeMap::new())).unwrap();
+        assert_eq!((back.cfg, &back.params), (l.cfg, &l.params));
     }
 
     #[test]

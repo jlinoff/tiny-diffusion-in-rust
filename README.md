@@ -55,6 +55,8 @@ make digits         # stage 3: the DiT on MNIST digits (downloads 10 MB): 1–2 
 make peek           # while it trains: samples from its latest checkpoint, out/peek.png and out/peek-progress.png
 make classifier     # stage 4: a digit classifier, the instrument that measures generated digits: a minute or two
 make measure-stage3 # the classifier's verdict on stage 3's digit models
+make digits-cond    # the DiT told which digit to draw (7×7 patches): about half an hour
+make guidance       # how the guidance scale trades clarity for variety: a table and a grid per scale
 make test           # every check: the tests, a smoke test of every command, formatting, lint
 make help           # every target
 ```

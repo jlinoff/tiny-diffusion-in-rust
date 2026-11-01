@@ -1215,15 +1215,50 @@ measurement depends on it, then the conditioning.
   `make help` now lists targets with digits in their names, which it
   had silently left out (`digits-p7` among them).
 
+Then the conditioning:
+
+- `dit.rs`: the label table (L + 1 rows of d, last in the layout so
+  every other weight keeps its place and its initial value), added to
+  the time vector before the SiLU; `predict_labels`, and
+  `predict_guided`, which computes both velocities in one pass over the
+  images twice. A model without labels is stage 3's exactly, and stage
+  3's files, which have no `labels` in their metadata, load as such.
+  Tested: gradients with labels against finite differences (the label
+  table's rows included), guidance by construction (w = 0 and w = 1 give
+  the unconditional and conditional velocities exactly, and other w lie
+  on the line between them), stage 3's files loading and predicting the
+  same, adaLN-Zero with labels (an untrained guided model predicts 0),
+  and the parameter formula with the label row (1,849,009 for the 7 × 7
+  model, as predicted).
+- `trainimg.rs`: batches with their labels, and label dropout from a
+  random stream of its own, so a model without labels trains exactly as
+  before (stage 3's golden losses are unchanged). Tested: the dropout
+  rate over 20,000 labels, and a golden loss with labels, whose first
+  value equals the unlabelled model's (untrained, both predict 0).
+- Commands: `train-img --conditional` (and `--drop`, 0.1 by default);
+  `sample-img --label N` (every image one class), `--classes` (one row
+  per class, the same noise down each column) and `--guidance w`;
+  `measure` on a model with labels prints the table of agreement,
+  confident, variety and overshoot for each guidance scale, with every
+  class requested equally often and the same noise at every scale.
+- A check of the whole on shapes, in this project's cloud workspace (a
+  12 × 12 model, 2,000 steps, 2 minutes, nowhere near trained): guidance
+  raised agreement from 47% at w = 1 to 74% at w = 8 while variety fell
+  from 0.94 to 0.87, and guided sampling took twice as long. So the
+  machinery does what it should, before the real run.
+
+Prediction 6's slant measurement isn't built yet: it reads the samples
+of the trained model, so it can follow the run without retraining.
+
 ### Running it
 
 | Command | What it does |
 |---|---|
 | `make classifier` | downloads MNIST's test images, trains the classifier (5,000 steps of 128, about 11 passes over the data), reports its accuracy: a minute or two |
 | `make measure-stage3` | the instrument on stage 3's models, 1,000 samples each (prediction 3) |
-| `make digits-cond` | the conditional DiT, 7 × 7 patches (about 26 minutes): not built yet |
-| `make guidance` | grids and the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8: not built yet |
-| `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours): not built yet |
+| `make digits-cond` | the DiT with labels, 7 × 7 patches (about 26 minutes); samples in `out/digits-cond.png` |
+| `make guidance` | the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8, and a grid per scale, `out/digits-cond-w2.png` and so on (`GUIDE_MODEL=` picks another model) |
+| `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours); then `make guidance GUIDE_MODEL=out/digits-cond-p4.safetensors` |
 
 To measure any model directly:
 `diffusion/target/release/diffusion measure --model out/digits.safetensors
@@ -1269,7 +1304,10 @@ is −1 plus a small error, beyond −1 about half the time; 80% × ½ is about
 it. So overshoot is now counted at margins past the range (0, 0.1, 0.25
 and 0.5), and the explanation makes a prediction of its own, written
 before the remeasurement: at margin 0.1 the unconditional models'
-overshoot falls below 2%.
+overshoot falls below 2%. **Remeasured: right.** At margin 0.1 it is
+0.00% for 4 × 4 and 0.06% for 7 × 7, and 0.00% for both at 0.25 and
+0.5: the unguided models' values stay within a tenth of the range, and
+the 36% was edge noise, as explained.
 
 This changes prediction 5's check, and the change is recorded rather
 than made silently: as written ("near 0% at w = 1"), it would fail for

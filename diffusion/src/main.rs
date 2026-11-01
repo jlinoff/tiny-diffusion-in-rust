@@ -168,6 +168,13 @@ enum Command {
         /// Write a checkpoint (the model so far) every this many steps.
         #[arg(long, default_value_t = 1000)]
         save_every: u64,
+        /// Train with labels (stage 4): the model can then be asked for a
+        /// class.
+        #[arg(long)]
+        conditional: bool,
+        /// With --conditional: the probability of dropping an image's label.
+        #[arg(long, default_value_t = 0.1)]
+        drop: f32,
         #[arg(short, long)]
         output: PathBuf,
     },
@@ -197,6 +204,17 @@ enum Command {
         /// Pixels per image pixel in the grids.
         #[arg(long, default_value_t = 3)]
         zoom: usize,
+        /// For a model with labels: draw this class in every image.
+        #[arg(long)]
+        label: Option<usize>,
+        /// For a model with labels: one row per class, with the same noise
+        /// down each column (n is then the number of columns).
+        #[arg(long)]
+        classes: bool,
+        /// For a model with labels: the guidance scale w (1: plain
+        /// conditional; 0: unconditional).
+        #[arg(long, default_value_t = 1.0)]
+        guidance: f32,
     },
     /// Train the digit classifier, stage 4's measuring instrument.
     Classifier {
@@ -246,6 +264,12 @@ enum Command {
         steps: usize,
         #[arg(long, default_value_t = 2)]
         seed: u64,
+        /// For a model with labels: guidance scales to measure, each with an
+        /// equal share of every class requested (w = 0: unconditional).
+        #[arg(long, value_delimiter = ',', default_value = "0,1,1.5,2,3,5,8")]
+        guidance: Vec<f32>,
+        #[arg(long, default_value = "data")]
+        data_dir: PathBuf,
     },
 }
 
@@ -482,10 +506,13 @@ fn run(command: Command) -> Result<(), String> {
             seed,
             log_every,
             save_every,
+            conditional,
+            drop,
             output,
         } => {
             check_writable(&output)?;
             let source = Source::open(&data, &data_dir, size, channels)?;
+            let labels = if conditional { source.classes() } else { 0 };
             let cfg = DitConfig {
                 image: source.shape(),
                 patch,
@@ -493,6 +520,7 @@ fn run(command: Command) -> Result<(), String> {
                 blocks,
                 heads,
                 freqs,
+                labels,
             };
             cfg.check()?;
             let tc = ImgTrainConfig {
@@ -501,6 +529,7 @@ fn run(command: Command) -> Result<(), String> {
                 learning_rate: lr,
                 warmup,
                 seed,
+                drop,
             };
             let sh = cfg.image;
             println!(
@@ -511,6 +540,11 @@ fn run(command: Command) -> Result<(), String> {
                 sh.width,
                 sh.channels
             );
+            if labels > 0 {
+                println!(
+                    "  with labels: {labels} classes, each image's dropped with probability {drop}"
+                );
+            }
             println!("   step    loss        lr   images/s   remaining");
             let mut model = Dit::new(cfg, seed);
             let meta = |done: u64, loss: f64| {
@@ -585,26 +619,72 @@ fn run(command: Command) -> Result<(), String> {
             real,
             data_dir,
             zoom,
+            label,
+            classes,
+            guidance,
         } => {
             let f = safetensors::read(&model)?;
             let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
             println!("{}", describe_checkpoint(&model, &f.metadata));
             let shape = dit.cfg.image;
-            let mut rng = Rng::new(seed);
-            let x0 = noise(n, shape.values(), &mut rng);
+            let l = dit.cfg.labels;
+            if l == 0 && (label.is_some() || classes || guidance != 1.0) {
+                return Err(format!(
+                    "{} has no labels: --label, --classes and --guidance need a model trained with --conditional",
+                    model.display()
+                ));
+            }
+            if label.is_some_and(|y| y >= l) {
+                return Err(format!("--label runs from 0 to {}", l - 1));
+            }
+            // With --classes: one row per class, the same n noises in each.
+            let (x0, ys, cols) = if classes {
+                let base = noise(n, shape.values(), &mut Rng::new(seed));
+                let mut data = Vec::with_capacity(l * base.data.len());
+                for _ in 0..l {
+                    data.extend_from_slice(&base.data);
+                }
+                let ys: Vec<usize> = (0..l).flat_map(|y| std::iter::repeat_n(y, n)).collect();
+                (Mat::from_vec(l * n, shape.values(), data), ys, n)
+            } else {
+                let x0 = noise(n, shape.values(), &mut Rng::new(seed));
+                let ys = match label {
+                    Some(y) => vec![y; n],
+                    None if l > 0 => (0..n).map(|i| i % l).collect(),
+                    None => Vec::new(),
+                };
+                (x0, ys, 8)
+            };
+            let count = x0.rows;
             let start = Instant::now();
-            let (out, path) = euler(x0, steps, |x, t| dit.predict(x, t), progress.is_some());
+            let (out, path) = euler(
+                x0,
+                steps,
+                |x, t| {
+                    if l == 0 {
+                        dit.predict(x, t)
+                    } else {
+                        dit.predict_guided(x, t, &ys, guidance)
+                    }
+                },
+                progress.is_some(),
+            );
+            let what = if l > 0 {
+                format!(", guidance w = {guidance}")
+            } else {
+                String::new()
+            };
             println!(
-                "{n} images from {} with {steps} Euler steps in {:.1} s",
+                "{count} images from {} with {steps} Euler steps{what} in {:.1} s",
                 model.display(),
                 start.elapsed().as_secs_f64()
             );
             check_writable(&png)?;
-            write_grid(&png, &out, shape, 8, zoom)?;
+            write_grid(&png, &out, shape, cols, zoom)?;
             println!("Wrote {}", png.display());
             if let Some(p) = progress {
                 // 8 generations (rows) at 9 moments (columns), t = 0 to 1.
-                let k = 8.min(n);
+                let k = 8.min(count);
                 let mut frames = Vec::new();
                 for r in 0..k {
                     for j in 0..=8 {
@@ -715,6 +795,8 @@ fn run(command: Command) -> Result<(), String> {
             n,
             steps,
             seed,
+            guidance,
+            data_dir,
         } => {
             let f = safetensors::read(&model)?;
             let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
@@ -740,6 +822,11 @@ fn run(command: Command) -> Result<(), String> {
                 classifier.display(),
                 cf.metadata.get("data").map(String::as_str).unwrap_or("?")
             );
+            if dit.cfg.labels > 0 {
+                let data = f.metadata.get("data").cloned().unwrap_or_default();
+                let real = labelled(&data, &data_dir, shape.height, shape.channels, true)?;
+                return measure_guided(&dit, &clf, &real, n, steps, seed, &guidance);
+            }
             let x0 = noise(n, shape.values(), &mut Rng::new(seed));
             let start = Instant::now();
             let (out, _) = euler(x0, steps, |x, t| dit.predict(x, t), false);
@@ -763,6 +850,81 @@ fn run(command: Command) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// The measurement table for a model with labels: for each guidance scale,
+/// n images with every class requested equally often (the same noise at
+/// every scale), and what the classifier says about them. Variety compares
+/// each class's samples with as many real test images of that class.
+fn measure_guided(
+    dit: &Dit<f32>,
+    clf: &Classifier<f32>,
+    real: &mini_diffusion::image::Images,
+    n: usize,
+    steps: usize,
+    seed: u64,
+    guidance: &[f32],
+) -> Result<(), String> {
+    let l = dit.cfg.labels;
+    let shape = dit.cfg.image;
+    let ys: Vec<usize> = (0..n).map(|i| i % l).collect();
+    let rows_of = |imgs: &Mat<f32>, pick: &dyn Fn(usize) -> bool| {
+        let v = shape.values();
+        let mut data = Vec::new();
+        for i in (0..imgs.rows).filter(|&i| pick(i)) {
+            data.extend_from_slice(imgs.row(i));
+        }
+        Mat::from_vec(data.len() / v, v, data)
+    };
+    let per = n / l;
+    let real_by: Vec<Mat<f32>> = (0..l)
+        .map(|c| {
+            let idx: Vec<usize> = (0..real.labels.len())
+                .filter(|&i| real.labels[i] as usize == c)
+                .take(per.max(2))
+                .collect();
+            rows_of(&real.pixels, &|i| idx.contains(&i))
+        })
+        .collect();
+    println!(
+        "{n} images per guidance scale, {per} of each class, {steps} Euler steps; variety against {} real test images per class",
+        per.max(2)
+    );
+    println!("      w   agreement   confident   variety   overshoot (margin 0.25)   time");
+    for &w in guidance {
+        let x0 = noise(n, shape.values(), &mut Rng::new(seed));
+        let start = Instant::now();
+        let (out, _) = euler(x0, steps, |x, t| dit.predict_guided(x, t, &ys, w), false);
+        let secs = start.elapsed().as_secs_f64();
+        let ms = measure(clf, &out, if w == 0.0 { None } else { Some(&ys) });
+        let variety: f64 = (0..l)
+            .map(|c| {
+                let g = rows_of(&out, &|i| ys[i] == c);
+                mini_diffusion::classify::variety(&g, &real_by[c])
+            })
+            .sum::<f64>()
+            / l as f64;
+        let over = ms
+            .overshoot
+            .iter()
+            .find(|(m, _)| *m == 0.25)
+            .map_or(0.0, |o| o.1);
+        let agree = ms
+            .agreement
+            .map_or("   (none)".to_string(), |a| format!("{:8.1}%", 100.0 * a));
+        let var = if w == 0.0 {
+            "   (none)".to_string()
+        } else {
+            format!("{variety:9.2}")
+        };
+        println!(
+            "  {w:5}   {agree}   {:8.1}%   {var}   {:22.2}%   {}",
+            100.0 * ms.confident,
+            100.0 * over,
+            duration(secs)
+        );
+    }
+    Ok(())
 }
 
 /// What a DiT checkpoint is: its data, the training step it was saved at

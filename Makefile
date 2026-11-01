@@ -132,6 +132,40 @@ $(OUT)/classifier.safetensors: data/mnist/train-images-idx3-ubyte data/mnist/t10
 	$(call hdr,classifier)
 	$(DIFFUSION) classifier --data mnist $(CLASSIFIER_ARGS) -o $@
 
+# Then the models with labels: 7 x 7 patches to develop and measure, one
+# 4 x 4 run to confirm (Decision 7). The usual %.png rule samples them
+# (labels taken in turn, 0 to 9, along the grid).
+$(OUT)/digits-cond.safetensors: data/mnist/train-images-idx3-ubyte | $(DIFFUSION) $(OUT)
+	$(call hdr,train-img digits with labels and 7x7 patches)
+	$(DIFFUSION) train-img --data mnist --patch 7 --conditional $(IMG_ARGS) -o $@
+
+$(OUT)/digits-cond-p4.safetensors: data/mnist/train-images-idx3-ubyte | $(DIFFUSION) $(OUT)
+	$(call hdr,train-img digits with labels and 4x4 patches)
+	$(DIFFUSION) train-img --data mnist --patch 4 --conditional $(IMG_ARGS) -o $@
+
+# The measurement table and a grid per guidance scale (one row per digit,
+# the same noise down each column): out/digits-cond-w2.png and so on.
+# GUIDE_MODEL picks the model: make guidance GUIDE_MODEL=out/digits-cond-p4.safetensors
+GUIDE_MODEL ?= $(OUT)/digits-cond.safetensors
+GUIDANCE    ?= 0 1 1.5 2 3 5 8
+comma := ,
+empty :=
+space := $(empty) $(empty)
+
+.PHONY: digits-cond digits-cond-p4 guidance
+digits-cond: $(OUT)/digits-cond.png ## Stage 4: the DiT with labels, 7x7 patches: about half an hour.
+digits-cond-p4: $(OUT)/digits-cond-p4.png ## Stage 4's confirmation with 4x4 patches: about 1 1/2 hours.
+
+guidance: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Measure GUIDE_MODEL at each guidance scale, and draw a grid of digits for each.
+	@test -f $(GUIDE_MODEL) || { echo "no $(GUIDE_MODEL) yet: make digits-cond first"; exit 1; }
+	$(call hdr,measure $(GUIDE_MODEL) by guidance scale)
+	$(DIFFUSION) measure --model $(GUIDE_MODEL) --classifier $< --guidance $(subst $(space),$(comma),$(strip $(GUIDANCE)))
+	$(call hdr,grids by guidance scale)
+	for w in $(GUIDANCE); do \
+		$(DIFFUSION) sample-img --model $(GUIDE_MODEL) --classes --n 8 --guidance $$w \
+			--png $(OUT)/$(basename $(notdir $(GUIDE_MODEL)))-w$$w.png || exit 1; \
+	done
+
 .PHONY: classifier measure-stage3
 classifier: $(OUT)/classifier.safetensors ## Train the digit classifier, stage 4's measuring instrument: a minute or two.
 
