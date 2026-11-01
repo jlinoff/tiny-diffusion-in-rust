@@ -752,10 +752,10 @@ fn run(command: Command) -> Result<(), String> {
                 "  confident (probability above {CONFIDENT}): {:.1}%",
                 100.0 * ms.confident
             );
-            println!(
-                "  overshoot (pixel values outside -1 to 1): {:.2}%",
-                100.0 * ms.overshoot
-            );
+            println!("  overshoot (pixel values beyond -1 to 1 by more than a margin):");
+            for (margin, f) in &ms.overshoot {
+                println!("    margin {margin:<4}  {:6.2}%", 100.0 * f);
+            }
             println!("  share of images in each class:");
             for (c, &k) in ms.counts.iter().enumerate() {
                 println!("    {c}: {:5.1}%", 100.0 * k as f64 / n.max(1) as f64);

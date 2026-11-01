@@ -52,6 +52,7 @@ names are explained where they first appear.
   - [Predictions](#predictions-2)
   - [What was built so far](#what-was-built-so-far)
   - [Running it](#running-it-2)
+  - [Stage 4 results](#stage-4-results)
 - [Stage 5: looking inside](#stage-5-looking-inside)
 - [Stage 6: text, later](#stage-6-text-later)
   - [How text diffusion works](#how-text-diffusion-works)
@@ -1104,7 +1105,10 @@ through attention: Esser et al. 2024.)
     digit, divided by the same for real test images of that digit (1 is
     real handwriting's variety, 0 is every sample identical);
   - **overshoot**: the fraction of pixel values outside the image range,
-    −1 to 1, before they are clipped for the picture.
+    −1 to 1, before they are clipped for the picture. (Now counted at
+    several margins past the range, 0, 0.1, 0.25 and 0.5, after the
+    first measurement showed why margin 0 misleads: [Stage 4
+    results](#stage-4-results), prediction 3.)
 - **Grids**: one row per digit, 0 to 9, and one column per starting
   noise, at several guidance scales: the same noise down each column.
 
@@ -1224,6 +1228,54 @@ measurement depends on it, then the conditioning.
 To measure any model directly:
 `diffusion/target/release/diffusion measure --model out/digits.safetensors
 --classifier out/classifier.safetensors` (options: `measure --help`).
+
+### Stage 4 results
+
+**2, the instrument: right.** 98.20% on MNIST's 10,000 test images,
+inside the predicted 97 to 98.5%, in 7 seconds of training on the M4
+(17 seconds for `make classifier` with the download and build). Its
+check: 99.79% on 10,000 training images, a gap of 1.6 points, inside
+the "a point or two" allowed, though near its edge. The training loss
+fell to 0.01, so the classifier has begun to memorize its training
+images; on the test images it is still right 49 times in 50, which is
+enough for an instrument whose errors are a small fraction of the
+effects it is meant to measure.
+
+**3, stage 3 measured again: right, near the top of the range.** On
+1,000 samples each:
+
+| | 4 × 4 (`digits`) | 7 × 7 (`digits-p7`) |
+|---|---|---|
+| Confident (probability above 0.9) | 72.3% | 74.2% |
+| My count by eye, 64 samples | about 62% | about 69% |
+| Least and most drawn digit | 5: 8.4%, 7: 12.6% | 4: 8.2%, 3 and 7: 12.0% |
+| Time for 1,000 samples, 50 steps | 45 s | 14 s |
+
+Every digit is drawn between 8% and 13% of the time, well inside the
+predicted 5 to 15%: flow matching carried the noise onto the classes in
+about their proportions in the data. The instrument agrees with my
+counts in order (7 × 7 a little ahead) and is about 7 to 10 points more
+generous. Two reasons, both expected: 64 samples carry an uncertainty of
+about 6 points either way, and a classifier trained only on real digits
+can be confident about a scribble that happens to look more like one
+digit than the others. So "confident" is an upper bound on "clear".
+
+**A flaw in the instrument, found by this measurement.** Overshoot, as
+first defined, every pixel value outside −1 to 1, was 35.7% and 36.5%:
+for models that are not guided at all. That isn't overshoot. About 80%
+of an MNIST image is background at exactly −1, and a model's output there
+is −1 plus a small error, beyond −1 about half the time; 80% × ½ is about
+40%. The count measured noise at the edge of the range, not pushes past
+it. So overshoot is now counted at margins past the range (0, 0.1, 0.25
+and 0.5), and the explanation makes a prediction of its own, written
+before the remeasurement: at margin 0.1 the unconditional models'
+overshoot falls below 2%.
+
+This changes prediction 5's check, and the change is recorded rather
+than made silently: as written ("near 0% at w = 1"), it would fail for
+a reason that has nothing to do with guidance. Revised before any
+guided sample exists: **at margin 0.25, overshoot near 0% at w = 1 and
+above 5% at w = 8.**
 
 ## Stage 5: looking inside
 

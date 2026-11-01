@@ -295,9 +295,16 @@ pub struct Measures {
     pub confident: f64,
     /// The fraction classified as the requested class, when there was one.
     pub agreement: Option<f64>,
-    /// The fraction of pixel values outside −1 to 1, before clipping.
-    pub overshoot: f64,
+    /// For each margin m of `MARGINS`, the fraction of pixel values more
+    /// than m beyond −1 to 1, before clipping (beyond −1 − m or 1 + m).
+    pub overshoot: Vec<(f32, f64)>,
 }
+
+/// The margins past the pixel range at which overshoot is counted. A
+/// margin of 0 counts every value outside −1 to 1, which on MNIST mostly
+/// counts tiny errors around the background's exact −1 (PLAN.md, Stage 4
+/// results, prediction 3); the larger margins count real overshoot.
+pub const MARGINS: [f32; 4] = [0.0, 0.1, 0.25, 0.5];
 
 /// The probability above which a classification counts as confident.
 pub const CONFIDENT: f32 = 0.9;
@@ -316,13 +323,20 @@ pub fn measure(clf: &Classifier<f32>, images: &Mat<f32>, requested: Option<&[usi
         assert_eq!(req.len(), n, "one requested class per image");
         b.iter().zip(req).filter(|((c, _), r)| c == *r).count() as f64 / n.max(1) as f64
     });
-    let outside = images.data.iter().filter(|x| x.abs() > 1.0).count();
+    let total = images.data.len().max(1) as f64;
+    let overshoot = MARGINS
+        .iter()
+        .map(|&m| {
+            let k = images.data.iter().filter(|x| x.abs() > 1.0 + m).count();
+            (m, k as f64 / total)
+        })
+        .collect();
     Measures {
         n,
         counts,
         confident,
         agreement,
-        overshoot: outside as f64 / images.data.len().max(1) as f64,
+        overshoot,
     }
 }
 
@@ -534,7 +548,15 @@ mod tests {
         assert_eq!(ms.counts[2], 1);
         assert!((ms.confident - 2.0 / 3.0).abs() < 1e-9, "{ms:?}");
         assert!((ms.agreement.unwrap() - 2.0 / 3.0).abs() < 1e-9, "{ms:?}");
-        assert!((ms.overshoot - 2.0 / 9.0).abs() < 1e-9, "{ms:?}");
+        // Two values outside −1 to 1 (both 9), both far outside.
+        assert_eq!(ms.overshoot[0].0, 0.0);
+        for &(_, f) in &ms.overshoot {
+            assert!((f - 2.0 / 9.0).abs() < 1e-9, "{ms:?}");
+        }
+        // A value just past the edge counts at margin 0 only.
+        let edge = Mat::from_vec(1, 3, vec![-1.05, 0.0, 0.0]);
+        let o = measure(&m, &edge, None).overshoot;
+        assert!((o[0].1 - 1.0 / 3.0).abs() < 1e-9 && o[1].1 == 0.0, "{o:?}");
         assert_eq!(measure(&m, &imgs, None).agreement, None);
     }
 
