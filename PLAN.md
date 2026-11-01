@@ -51,7 +51,8 @@ names are explained where they first appear.
   - [How it will be tested](#how-it-will-be-tested)
   - [Predictions](#predictions-2)
   - [Running it (planned)](#running-it-planned)
-- [Text, later](#text-later)
+- [Stage 5: looking inside](#stage-5-looking-inside)
+- [Stage 6: text, later](#stage-6-text-later)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
 - [Decisions](#decisions)
@@ -246,13 +247,14 @@ the example changes at every sampling step.
    any code, with its predictions). The digit's class as a condition,
    and classifier-free guidance: "draw a 7", and what the guidance scale
    trades.
-5. **Looking inside** (optional): what the velocity field looks like at
-   each t, which patches attend to which, and how early in generation the
-   digit's identity is settled (stage 3's progress rows already answer
-   that roughly: by t = 0.5).
-6. **Text, later** (optional): a masked diffusion language model on
-   TinyStories (tiny-llm-in-rust's corpus of short, simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
-   tiny-llm-in-rust's model at the same size (see [Text, later](#text-later)).
+5. **Looking inside** (optional; see [Stage 5](#stage-5-looking-inside)):
+   what the velocity field looks like at each t, which patches attend to
+   which, and how early in generation the digit's identity is settled
+   (stage 3's progress rows already answer that roughly: by t = 0.5).
+6. **Text, later** (optional; see [Stage 6](#stage-6-text-later)): a
+   masked diffusion language model on TinyStories (tiny-llm-in-rust's
+   corpus of short, simple stories), reusing tiny-llm-in-rust's
+   tokenizer, compared with tiny-llm-in-rust's model at the same size.
 
 Each stage ends the way tiny-llm-in-rust's did: predictions written down
 first, then the measurements, including the ones that turn out wrong.
@@ -1195,7 +1197,23 @@ Written before any code. Each gives its mechanism and a numeric check.
 | `make guidance` | grids and the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8 |
 | `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours) |
 
-## Text, later
+## Stage 5: looking inside
+
+Optional, and planned in detail only when stage 4 is done. Its
+questions, about the trained models rather than new ones: what the
+learned velocity field looks like at each t (as stage 2 plotted it for
+points, now as images of velocity); which patches attend to which, and
+whether that changes along the path; and when a digit's identity is
+settled. Stage 3's progress rows already answer the last roughly, by
+t = 0.5; this stage would measure it, for example by asking the stage 4
+classifier, at every step of a generation, which digit the image is
+becoming.
+
+## Stage 6: text, later
+
+Optional, like stage 5. This section was written early, as an
+explanation, and the stage itself will be planned in detail when it
+starts.
 
 Diffusion isn't only for images. This section describes how it works on
 text, then compares it with the language model of tiny-llm-in-rust, which
