@@ -1270,6 +1270,24 @@ Then the conditioning:
 | `make guidance` | the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8, the style correlations, and a grid per scale, `out/digits-cond-w2.png` and so on (`GUIDE_MODEL=` picks another model) |
 | `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours); then `make guidance GUIDE_MODEL=out/digits-cond-p4.safetensors` |
 
+The image models so far, and what their names mean: a suffix marks
+the exception to each family's default patch size, `-p7` among the
+models without labels (default 4 × 4), `-p4` among the models with
+labels (default 7 × 7, Decision 7).
+
+| Model (`out/…safetensors`) | Patches | Labels | Stage |
+|---|---|---|---|
+| `digits` | 4 × 4 | no | 3 |
+| `digits-p7` | 7 × 7 | no | 3 |
+| `fashion` | 4 × 4 | no | 3 |
+| `digits-cond` | 7 × 7 | yes | 4 |
+| `digits-cond-p4` | 4 × 4 | yes | 4 |
+
+So the clean comparisons, one difference each, are `digits` against
+`digits-p7` (patch size, stage 3), `digits-p7` against `digits-cond`
+(labels, at 7 × 7) and `digits` against `digits-cond-p4` (labels, at
+4 × 4).
+
 To measure any model directly:
 `diffusion/target/release/diffusion measure --model out/digits.safetensors
 --classifier out/classifier.safetensors` (options: `measure --help`).
