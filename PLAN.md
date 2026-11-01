@@ -800,7 +800,33 @@ Against the predictions so far:
   two-thirds of samples, not all; the ambiguous blends predicted are
   there.
 - **3, coarse to fine: right**, at every checkpoint and at the end.
-- **4, fewer steps blur**: not yet measured.
+- **4, fewer steps blur: wrong at 4 steps, and the softening at 10
+  barely shows.** At 10 Euler steps the grid is almost the same as at
+  50, cell for cell. At 4 steps nothing smears towards a grey average:
+  every cell still holds the same digit as at 50 steps, in the same
+  place, but the strokes are thinner and ragged, with faint doubled or
+  ghost strokes beside them. The likely reason is that, as with the
+  shapes, the learned paths are nearly straight, so even 4 straight
+  steps follow them closely; where a path does bend, as when the model
+  is still choosing between two strokes, a big step heads for a blend
+  of both, and that blend shows up as a faint second stroke rather than
+  as blur. The collapse onto the average image is a one-step effect:
+  the first step, from pure noise, can only head for the mean of all
+  digits.
+
+  That explanation made a prediction of its own, written after the
+  4-step grid and before these were run: 1 step gives the same blurry
+  average digit in every cell, and 2 steps is where separate digits
+  appear. Both held. At 1 step all 64 cells are one grey blob, MNIST's
+  mean image (a faint 0, 8 and 9 laid over each other), whatever the
+  starting noise: at t = 0 the noise says nothing about which image it
+  will become, so the best velocity is the mean image minus the noise,
+  and one full step lands exactly on the mean, as stage 2's Gaussian
+  did. At 2 steps each cell already holds its own digit, mostly the
+  same one as at 50 steps, but drawn as a tangle of several overlaid
+  strokes, the candidates not yet resolved. The whole sequence: 1 step
+  the mean, 2 steps tangled blends, 4 steps ghost strokes, 10 steps
+  close to 50.
 
 ## Text, later
 
