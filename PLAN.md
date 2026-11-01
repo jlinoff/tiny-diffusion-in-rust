@@ -40,6 +40,7 @@ names are explained where they first appear.
   - [Results](#results)
 - [Stage 3: images](#stage-3-images)
   - [What was built](#what-was-built-1)
+  - [Where the weights are](#where-the-weights-are)
   - [Running it](#running-it-1)
   - [Choosing the patch size](#choosing-the-patch-size)
   - [Predictions](#predictions-1)
@@ -630,6 +631,50 @@ tokens of 16 values for MNIST): 1,843,344 parameters, against Decision
 3's guess of 1.2 million. The guess counted the attention and
 feed-forward weights (12d² per block) but not adaLN's, a d × 6d matrix per
 block, half as many again.
+
+### Where the weights are
+
+**A training step**, repeated 20,000 times: take 128 real images and
+128 images of pure noise, with a random time t for each pair; mix them,
+x_t = (1 − t)·noise + t·image; cut each mixture into patches; the model
+predicts the velocity, image − noise, for every pixel; the mean squared
+error against the true velocity is backpropagated, and the optimizer
+(Adam, as in tiny-llm-in-rust) nudges every weight a little. At the end
+only the weights are saved, 1.8 million numbers in
+`out/digits.safetensors`, and no images. What they encode is a
+function: given any noisy image and a time, which way to move towards
+real images. Generating is asking that function for a direction 50
+times, from fresh noise, taking a small step each time.
+
+**A patch is a token, but it has no weights of its own.** In
+tiny-llm-in-rust a token is an ID (identifier: a number naming one
+entry) in a vocabulary, and the model looks
+up that ID's row in an embedding table: one learned vector per word.
+Patches have no vocabulary: they are 16 continuous pixel values, and the
+same patch never occurs twice. So instead of a lookup, every patch is
+multiplied by one shared matrix, 16 pixel values to d = 128 numbers,
+and at the end one shared matrix turns each token's 128 numbers back
+into 16 values, the velocity of its pixels. (A language model ends
+differently: a probability for every word of its vocabulary.)
+
+Where the 1,843,344 parameters of the default DiT sit:
+
+| Weights | Parameters | Used by |
+|---|---|---|
+| Patch matrix and bias: 16 pixel values to 128 numbers | 2,176 | every patch |
+| Position vectors: one row of 128 per patch position | 6,272 | one position each |
+| Time network: t to 128 numbers | 18,816 | every patch |
+| 6 blocks: attention, feed-forward, adaLN | 1,780,992 | every patch |
+| Final adaLN and output matrix: 128 numbers to 16 | 35,088 | every patch |
+
+97% of the weights are in the blocks, and they treat every patch alike.
+The only weights belonging to a place are the position vectors, 49 rows
+saying "this is the patch at row 2, column 5". So the model does not
+know "what patch 17 looks like"; it knows how strokes in neighbouring
+patches fit together, and that is attention's work. It is also why the
+7 × 7 model is almost the same size (1,847,601): its patch and output
+matrices grow from 16 values to 49, its position table shrinks from 49
+rows to 16, and the blocks are unchanged.
 
 ### Running it
 
