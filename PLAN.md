@@ -46,6 +46,11 @@ names are explained where they first appear.
   - [Predictions](#predictions-1)
   - [Stage 3 results](#stage-3-results)
   - [What stage 3 taught](#what-stage-3-taught)
+- [Stage 4: conditioning and guidance](#stage-4-conditioning-and-guidance)
+  - [What it adds](#what-it-adds)
+  - [How it will be tested](#how-it-will-be-tested)
+  - [Predictions](#predictions-2)
+  - [Running it (planned)](#running-it-planned)
 - [Text, later](#text-later)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
@@ -1039,6 +1044,147 @@ And one about the engineering: sampling with a fixed seed was chosen so
 that successive peeks show the training alone. It is also what made the
 comparisons of 1 and 2 possible, across checkpoints and across models:
 an unplanned payoff of designing for test.
+
+## Stage 4: conditioning and guidance
+
+Written before any code: the plan, the tests, and the predictions, each
+with its mechanism and a numeric check (the convention from
+[What stage 3 taught](#what-stage-3-taught), 7). Developed with 7 × 7
+patches and confirmed once with 4 × 4 ([Decisions](#decisions), 7).
+
+### What it adds
+
+Stage 3's model draws a digit, but nothing says which: about a third of
+its samples sit between digits. Stage 4 tells it.
+
+- **The label as a condition.** A table of 11 learned vectors of d
+  numbers, one per digit and one more meaning "no label". The image's
+  vector is added to its time vector, so it reaches every block through
+  the same adaLN scale, shift and gate the time already uses (as the DiT
+  paper does). That is (L + 1)d parameters for L labels: 11 × 128 =
+  1,408, so the 7 × 7 model grows from 1,847,601 to 1,849,009, and the
+  formula test of [Where the weights are](#where-the-weights-are) gains
+  the row.
+- **Label dropout.** In training, each image's label is replaced by "no
+  label" with probability 0.1, so one model learns both "draw a 7" and
+  "draw any digit". (0.1 is the usual choice, Ho and Salimans 2022: the
+  unconditional mode needs some training, but most steps should teach the
+  conditional one.)
+- **Classifier-free guidance** (defined in [Terms](#terms)): at each step
+  of generation, both velocities, v = v_uncond + w·(v_cond − v_uncond),
+  computed in one pass over a batch twice the size. w = 0 is the
+  unconditional model, w = 1 the plain conditional one, and w above 1
+  pushes further in the direction the label adds.
+- **A measuring instrument: a digit classifier.** Stage 3's counts of
+  "clear digits" were made by eye, quickly, and are subjective. Stage 4
+  needs numbers: does a sample requested as a 7 look like a 7, and how
+  varied are the 7s? So a small classifier is trained on MNIST: a
+  network from an image's 784 pixel values to a probability for each of
+  the 10 digits, two hidden layers of 256 (784 × 256 + 256 + 256 × 256 +
+  256 + 256 × 10 + 10 = 269,322 parameters), checked on MNIST's 10,000
+  test images, which no model here trains on. Its measurements, for
+  1,000 samples (100 per digit) at each guidance scale:
+  - **agreement**: the fraction of samples the classifier assigns the
+    requested digit;
+  - **confident**: the fraction it assigns any digit with probability
+    above 0.9, the instrument's version of "a clear digit";
+  - **variety**: the average distance between two samples of the same
+    digit, divided by the same for real test images of that digit (1 is
+    real handwriting's variety, 0 is every sample identical);
+  - **overshoot**: the fraction of pixel values outside the image range,
+    −1 to 1, before they are clipped for the picture.
+- **Grids**: one row per digit, 0 to 9, and one column per starting
+  noise, at several guidance scales: the same noise down each column.
+
+### How it will be tested
+
+- the label table's gradients, in the whole-model finite-difference
+  check;
+- **guidance by construction**: w = 0 gives exactly the unconditional
+  velocity, w = 1 exactly the conditional one, and the result is linear
+  in w;
+- label dropout's rate, measured over many draws;
+- **stage 3's models still load** and give the same outputs bit for bit:
+  a model without labels is the case of none;
+- adaLN-Zero still holds: an untrained conditional model predicts 0;
+- a golden loss for conditional training, as for stage 3's;
+- the classifier: its gradients, a golden loss, and learning a small
+  separable set; the metrics: variety of identical images is 0, and
+  agreement on real test images is the classifier's accuracy.
+
+### Predictions
+
+Written before any code. Each gives its mechanism and a numeric check.
+
+1. **Cost: training unchanged, guided sampling twice as slow.**
+   Mechanism: training adds one table lookup and one addition per image;
+   guided sampling runs every image twice. Check: 1,408 new parameters
+   are 0.08% of 1.85 million, and the lookup is no work beside six
+   blocks of matrix products. So a 7 × 7 run takes about 26 minutes, as
+   `digits-p7` did, and 64 guided samples about 1.8 seconds against 0.9.
+2. **The instrument: 97 to 98.5% accuracy on the test images.**
+   Mechanism: MNIST is nearly separable by a single matrix (LeCun et
+   al. 1998 report 88% for a linear classifier), and hidden layers
+   recover most of the rest (97% in the same paper for two, of 300 and
+   100; a little more with today's optimizers, such as Adam). Check, before trusting it: its accuracy on
+   the training images should exceed the test accuracy by no more than a
+   point or two; a larger gap means it memorized.
+3. **Stage 3, measured again: 55 to 75% confident, every digit drawn.**
+   Mechanism: the eye counts were about 40 of 64 (62%) for 4 × 4 and 44
+   (69%) for 7 × 7, and the instrument should agree with them roughly.
+   Flow matching carries the noise onto the whole data distribution,
+   class frequencies included, and MNIST's digits are each 9 to 11% of
+   it. Check: no digit should be drawn less than 5% or more than 15% of
+   the time by the unconditional models.
+4. **The label removes the blends: at w = 1, agreement 85 to 95%, and
+   above 80% confident.** Mechanism: stage 3's blends were noise near a
+   boundary between the regions that flow to two digits; with the label
+   given, the field flows to one digit's distribution, and those
+   boundaries are gone. Malformed shapes of the right digit remain.
+   Check: by eye, about half of stage 3's failed third were blends and
+   half scribbles; removing the blends leaves about 15% failures, so
+   about 85% confident, below the classifier's own ceiling of about 98%.
+5. **Guidance trades variety for clarity, and breaks when overdone.**
+   From w = 1 to 3, agreement and confidence rise to 95% or more, and
+   variety falls to between 0.7 and 0.85. At w = 8 the images degrade:
+   thick, saturated strokes and odd shapes. Mechanism: guidance is
+   v_cond + (w − 1)(v_cond − v_uncond), a push away from whatever is
+   generic towards the most typical member of the class; past the fields
+   the model was trained on, nothing keeps the push sensible. Check: at
+   w = 8 the class-specific difference is amplified 7 times; that
+   difference is up to about 2 per pixel where the digit is decided (the
+   whole range from black to white), so many pixels should land outside
+   −1 to 1: overshoot near 0% at w = 1, above 5% at w = 8.
+6. **The noise decides the style.** With the label fixed, what the noise
+   still decides is how the digit is written: so down each column of a
+   grid, the ten digits share a slant, a thickness and a position.
+   Mechanism: the label enters only through adaLN's scales and shifts,
+   and the rest of the network treats the noise the same whatever the
+   label; stage 3 showed the noise-to-image map belongs to the data and
+   the method. Check: measure each sample's slant (from the second
+   moments of its pixel positions) and correlate it between digits drawn
+   from the same noise and from different noise: above 0.5 for the
+   same, near 0 for different.
+7. **The unconditional mode is a little worse than `digits-p7`**, by up
+   to 10 points of confident samples, with low confidence in this one.
+   Mechanism: it is trained on only a tenth of the examples, but its
+   weights are shared with the conditional mode, so most of what that
+   mode learns about strokes carries over. No numeric check beyond the
+   10% share; this is the prediction most likely to be wrong in either
+   direction.
+8. **The 4 × 4 confirmation agrees**: every conclusion above holds,
+   with agreement and confidence within 3 points of 7 × 7's. Mechanism:
+   stage 3 found the two patch sizes give the same images on digits.
+
+### Running it (planned)
+
+| Command | What it does |
+|---|---|
+| `make classifier` | downloads MNIST's test images, trains the classifier, reports its accuracy (minutes) |
+| `make measure-stage3` | the instrument on stage 3's models (prediction 3) |
+| `make digits-cond` | the conditional DiT, 7 × 7 patches (about 26 minutes) |
+| `make guidance` | grids and the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8 |
+| `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours) |
 
 ## Text, later
 
