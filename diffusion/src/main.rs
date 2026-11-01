@@ -495,8 +495,11 @@ fn run(command: Command) -> Result<(), String> {
                     // The model so far, to the same file: sample from it
                     // while training continues.
                     let f = m.to_file(meta(step, last.get()));
-                    if let Err(e) = safetensors::write(&output, &f.tensors, &f.metadata) {
-                        save_error = Some(e);
+                    match safetensors::write(&output, &f.tensors, &f.metadata) {
+                        Ok(()) => {
+                            println!("  checkpoint: step {step} written to {}", output.display())
+                        }
+                        Err(e) => save_error = Some(e),
                     }
                 },
             );

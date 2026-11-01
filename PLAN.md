@@ -41,6 +41,7 @@ names are explained where they first appear.
   - [What was built](#what-was-built-1)
   - [Choosing the patch size](#choosing-the-patch-size)
   - [Predictions](#predictions-1)
+  - [Results so far](#results-so-far)
 - [Text, later](#text-later)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
@@ -356,6 +357,25 @@ nearest part of the data, and by t = 0.9 they pull hard onto it. That
 progression is the "decision" being made over time: early steps settle
 roughly where a point is going, late steps settle exactly where.
 
+**Image grids** (stage 3: `sample-img`'s PNG files):
+
+- **the samples grid** (`--png`, e.g. `out/digits.png`): 64 generated
+  images, 8 across, each from its own random noise. The grid is only a
+  way to see many at once; the images are unrelated to one another.
+- **the progress grid** (`--progress`, e.g. `out/digits-progress.png`):
+  the making of the first 8 of those images. Each *row* is one
+  generation, and its 9 *columns* are snapshots at t = 0, 1/8, 2/8 … 1:
+  the first column is the starting noise, the last the finished image.
+  So the last column, read top to bottom, is the samples grid's first
+  row, read left to right.
+- **the real grid** (`--real`): 64 images from the training data, to
+  compare with.
+- **the same seed gives the same starting noise** (seed 2 by default), so
+  samples from two checkpoints of one run, or from two models of the same
+  image size, start from identical noise: each position in the grid shows
+  how the same noise is turned into an image, and the difference between
+  the grids is the training alone.
+
 **The habit that makes them useful: ask what changed between two panels,
 and what didn't.** The figures change one thing at a time (the steps, the
 sampler, the training), so each difference can be traced to its cause.
@@ -639,6 +659,38 @@ Written before any images were generated:
    third of the time per step, and digits still recognizable, but with
    strokes stepped or misaligned at the 7 × 7 boundaries, which 4 × 4
    patches don't show as clearly.
+
+### Results so far
+
+**Speed (prediction 1): right.** On the M4, the default DiT trains on
+MNIST at about 435 images per second, 0.29 seconds a step of 128, so
+20,000 steps take 1 h 36 min: inside the predicted 1½ to 2 hours, and
+about 18 times this cloud workspace's 25 images per second.
+
+**Synthetic shapes, a check of the whole pipeline** (no prediction was
+written for these; `make shapes`: 16 × 16, a DiT of width 64, 4 blocks,
+16 tokens, 315,536 parameters, at 350 images per second here):
+
+- *3,000 steps (9 minutes)*: every sample is one white shape on black,
+  of a plausible size and place, but blobby: no crisp squares, discs or
+  crosses. 10 Euler steps look almost the same as 50 (the paths are
+  nearly straight, as in stage 2); 2 steps give grey smudges.
+- *12,000 steps (38 minutes)*: much crisper; recognizable crosses,
+  squares and discs among them, so the blobs were mostly a matter of
+  training time. Two failures remain: shapes cut off along straight
+  lines that fall on the 4-pixel patch boundaries (the block seams of
+  [Choosing the patch size](#choosing-the-patch-size)), and the odd
+  fragment or empty image. The loss went from 0.249 to 0.202.
+
+**MNIST at step 2,000** (a checkpoint, a tenth of the run): strokes
+already, a few recognizable digits (1s, a 3, a 5, a 2) and many
+digit-like blends. Prediction 3 (coarse to fine) holds: each digit's
+shape and position appear by t = 0.5 and barely move after. Prediction 2
+is on track with a different flavour than predicted: the strokes are
+broken and speckled but not blurry. The model has learned MNIST's
+texture (pure black, fully white strokes) before its structure (strokes
+that join into a whole digit), which needs distant patches to agree:
+attention's job, and the slower thing to learn.
 
 ## Text, later
 
