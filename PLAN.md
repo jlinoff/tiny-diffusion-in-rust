@@ -1202,6 +1202,23 @@ here as they come up, and stay open until settled.
    it, on data small enough to measure exactly. DDPM for images would
    reuse the DiT unchanged (only the target and the sampler differ), so
    it remains a small experiment if ever wanted.
+7. **Stage 4 is developed and measured with 7 × 7 patches, then
+   confirmed once with 4 × 4.** Decided after stage 3's measurements:
+   - *speed*: a 7 × 7 run takes 26 minutes on the M4 against 1½ hours,
+     and stage 4 needs several runs (with and without labels, and
+     several guidance strengths), so an idea can be tried in an evening;
+   - *the same images*: on digits, 7 × 7 patches gave as many clear
+     digits as 4 × 4 and no visible seams, though a 9% higher loss
+     (prediction 6);
+   - *a clean comparison*: `digits-p7` is already the unconditional
+     baseline at that size, so a conditioned 7 × 7 model differs from it
+     in the labels alone.
+
+   The cost is the 4 × 4 model's lower loss, which made no visible
+   difference on digits but might on finer detail. So the stage ends
+   with one 4 × 4 run, to check that its conclusions don't depend on the
+   patch size. `train-img` keeps 4 × 4 as its default, so `make digits`
+   means what it did; stage 4's targets ask for `--patch 7` explicitly.
 
 ## Where things live
 
