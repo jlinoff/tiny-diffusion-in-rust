@@ -354,6 +354,8 @@ mod tests {
         assert_eq!(c.parameters(), 1_843_344);
         c.patch = 7;
         assert_eq!(c.parameters(), 1_847_601);
+        (c.patch, c.width) = (4, 256);
+        assert_eq!(c.parameters(), 7_323_920);
     }
 
     /// adaLN-Zero: every gate and the output layer start at zero, so the

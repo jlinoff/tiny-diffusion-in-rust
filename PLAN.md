@@ -663,14 +663,22 @@ p the patch side (4), c the channels (1), v = p²c the values per patch
 (16), N = (H/p)(W/p) the tokens for an H × W image (49), and k the time
 frequencies (8):
 
-| Weights | Formula | Parameters | Used by |
-|---|---|---|---|
-| Patch matrix and bias: v pixel values to d numbers | (v + 1)d | 2,176 | every patch |
-| Position vectors: one row of d per patch position | Nd | 6,272 | one position each |
-| Time network: t, then a sine and a cosine at each of k frequencies (2k + 1 numbers), through two layers to d | (2k + 2)d + d² + d | 18,816 | every patch |
-| B blocks: adaLN 6d² + 6d, attention 4d² + 4d, feed-forward 8d² + 5d | B(18d² + 15d) | 1,780,992 | every patch |
-| Final adaLN and output matrix: d numbers to v | 2d² + 2d + (d + 1)v | 35,088 | every patch |
-| **Total** | B(18d² + 15d) + 3d² + (2v + N + 2k + 6)d + v | **1,843,344** | |
+| Weights | Formula | With the defaults | Parameters | Used by |
+|---|---|---|---|---|
+| Patch matrix and bias: 16 pixel values (v) to 128 numbers (d) | (v + 1)d | (16 + 1) × 128 | 2,176 | every patch |
+| Position vectors: one row of 128 (d) for each of 49 positions (N) | Nd | 49 × 128 | 6,272 | one position each |
+| Time network: t, then a sine and a cosine at each of 8 frequencies (k), 17 numbers, through two layers to 128 | (2k + 2)d + d² + d | 18 × 128 + 128² + 128 | 18,816 | every patch |
+| 6 blocks (B): adaLN 6d² + 6d, attention 4d² + 4d, feed-forward 8d² + 5d | B(18d² + 15d) | 6 × (18 × 128² + 15 × 128) | 1,780,992 | every patch |
+| Final adaLN and output matrix: 128 numbers to 16 | 2d² + 2d + (d + 1)v | 2 × 128² + 2 × 128 + 129 × 16 | 35,088 | every patch |
+| **Total** | B(18d² + 15d) + 3d² + (2v + N + 2k + 6)d + v | 6 × 296,832 + 3 × 128² + 103 × 128 + 16 | **1,843,344** | |
+
+The same total for another model, by example. The 7 × 7 run changes only
+the patch side, so v = 7² × 1 = 49 and N = (28/7)² = 16:
+6 × 296,832 + 3 × 128² + (2 × 49 + 16 + 2 × 8 + 6) × 128 + 49
+= 1,780,992 + 49,152 + 17,408 + 49 = 1,847,601. A wider model, d = 256
+with everything else at the defaults: 6 × (18 × 256² + 15 × 256) +
+3 × 256² + 103 × 256 + 16 = 7,077,888 + 23,040 + 196,608 + 26,368 + 16
+= 7,323,920: about four times the parameters for twice the width.
 
 Inside a block: adaLN is one d × 6d matrix with its bias, making the six
 modulation vectors (a scale, a shift and a gate for attention, and the
