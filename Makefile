@@ -213,6 +213,10 @@ lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links, acronyms de
 	else echo "pylint not installed: skipped (pip install pylint)"; fi
 	python3 tools/toc.py --check PLAN.md
 	python3 tools/acronyms.py PLAN.md README.md --known tools/acronyms-known.txt
+	@missing=$$(grep -oE '^[A-Za-z0-9_]+ *\?=' Makefile | tr -d ' ?=' | \
+		while read v; do case " $(HELP_VARS) " in *" $$v "*) ;; *) echo $$v;; esac; done); \
+	test -z "$$missing" || { echo "make help doesn't list: $$missing (add to HELP_VARS)"; exit 1; }; \
+	echo "make help lists every variable"
 
 .PHONY: toc
 toc: ## Update PLAN.md's table of contents and check its internal links.
@@ -223,9 +227,27 @@ clean: ## Remove generated files (keeps data/).
 	cd diffusion && cargo clean
 	rm -rf $(OUT)
 
+# The variables make help lists, one per line, with what each does and its
+# value now. A variable meant to be set from the command line gets a line
+# here and a HELP_ description.
+HELP_VARS := OUT CARGO_FEATURES TRAIN2D_ARGS IMG_ARGS SHAPES_ARGS PEEK_MODEL \
+	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE URL_mnist URL_fashion
+HELP_OUT             := where models, plots and images are written
+HELP_CARGO_FEATURES  := blas: Apple Accelerate for large matrix products (default on macOS); empty: plain Rust
+HELP_TRAIN2D_ARGS    := options for train2d, the stage 2 models (diffusion train2d --help)
+HELP_IMG_ARGS        := options for train-img, the digit, clothing and labelled models (diffusion train-img --help)
+HELP_SHAPES_ARGS     := the whole option set for make shapes, replacing the default
+HELP_PEEK_MODEL      := the running model make peek samples from
+HELP_CLASSIFIER_ARGS := options for the classifier (diffusion classifier --help)
+HELP_GUIDE_MODEL     := the labelled model make guidance measures
+HELP_GUIDANCE        := the guidance scales make guidance measures and draws
+HELP_URL_mnist       := where MNIST is downloaded from
+HELP_URL_fashion     := where Fashion-MNIST is downloaded from
+
 .PHONY: help
 help: ## This help message.
 	$(call hdr,$@)
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | \
 		awk -F':.*## ' '{printf("   %-15s %s\n", $$1, $$2)}' | sort
-	@printf "\n   Variables: CARGO_FEATURES=%s OUT=%s\n" "$(CARGO_FEATURES)" "$(OUT)"
+	@printf "\n   Variables, set on the command line (make digits IMG_ARGS='--steps 5000'):\n"
+	@$(foreach v,$(HELP_VARS),printf "   %-15s %s\n   %-15s now: %s\n" '$(v)' '$(HELP_$(v))' '' '$(or $($(v)),(empty))';)

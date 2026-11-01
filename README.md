@@ -58,7 +58,7 @@ make measure-stage3 # the classifier's verdict on stage 3's digit models
 make digits-cond    # the DiT told which digit to draw (7×7 patches): about half an hour
 make guidance       # how the guidance scale trades clarity for variety: a table and a grid per scale
 make test           # every check: the tests, a smoke test of every command, formatting, lint
-make help           # every target
+make help           # every target, and every variable with its value
 ```
 
 The plots are SVG (Scalable Vector Graphics) files and the images PNG

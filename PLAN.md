@@ -327,6 +327,9 @@ gets:
   every acronym in PLAN.md and README.md defined where it's first used
   (`tools/acronyms.py`; names that need no definition are listed in
   `tools/acronyms-known.txt`).
+- **`make help`** lists every target and every variable meant to be set
+  on the command line; lint fails if a variable is added to the Makefile
+  without a line in the help.
 - **formulas in the documents**: where PLAN.md gives a formula the code
   must obey, such as the DiT's parameter count, a test checks it
   against the code (`parameter_formulas_in_plan_md`).
