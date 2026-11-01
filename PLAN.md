@@ -1054,8 +1054,17 @@ patches and confirmed once with 4 × 4 ([Decisions](#decisions), 7).
 
 ### What it adds
 
-Stage 3's model draws a digit, but nothing says which: about a third of
-its samples sit between digits. Stage 4 tells it.
+Stage 3's model is never told which digit to draw: its only inputs are
+the noise and the time, so the noise alone decides, and about a third of
+its samples land between digits, as blends or scribbles. Stage 4 gives
+the model one more input, the digit we want, so we can ask for a 7 and
+get one. That closes the loop to what production systems do when a
+user asks for "a cat on a sofa": there the request is a sentence, turned
+into numbers by a text encoder, rather than one of ten labels, but the
+idea is the same, and so is the guidance that steers towards it.
+(Stable Diffusion 3, for one, adds a summary of the sentence to the
+time vector, as the label is added here, and reads the full sentence
+through attention: Esser et al. 2024.)
 
 - **The label as a condition.** A table of 11 learned vectors of d
   numbers, one per digit and one more meaning "no label". The image's
