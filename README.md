@@ -47,14 +47,16 @@ wrong.
 ## Try it
 
 ```
-make moons         # train flow matching on two moons, plot it (out/moons-flow.svg): under a minute
-make moons-ddpm    # the same data by DDPM, sampled with DDIM and DDPM's own 1,000 steps
-make stage2        # everything of stage 2: moons, rings, spiral, and the exact-field table
-make shapes        # stage 3: a small DiT on synthetic 16×16 shapes, no download: minutes
-make digits        # stage 3: the DiT on MNIST digits (downloads 10 MB): 1–2 hours on an M4
-make peek          # while it trains: samples from its latest checkpoint, out/peek.png and out/peek-progress.png
-make test          # every check: the tests, a smoke test of every command, formatting, lint
-make help          # every target
+make moons          # train flow matching on two moons, plot it (out/moons-flow.svg): under a minute
+make moons-ddpm     # the same data by DDPM, sampled with DDIM and DDPM's own 1,000 steps
+make stage2         # everything of stage 2: moons, rings, spiral, and the exact-field table
+make shapes         # stage 3: a small DiT on synthetic 16×16 shapes, no download: minutes
+make digits         # stage 3: the DiT on MNIST digits (downloads 10 MB): 1–2 hours on an M4
+make peek           # while it trains: samples from its latest checkpoint, out/peek.png and out/peek-progress.png
+make classifier     # stage 4: a digit classifier, the instrument that measures generated digits: a minute or two
+make measure-stage3 # the classifier's verdict on stage 3's digit models
+make test           # every check: the tests, a smoke test of every command, formatting, lint
+make help           # every target
 ```
 
 The plots are SVG (Scalable Vector Graphics) files and the images PNG

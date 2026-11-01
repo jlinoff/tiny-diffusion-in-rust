@@ -29,6 +29,10 @@ $D train-img --data shapes --size 8 --channels 3 --patch 4 --width 16 --blocks 1
 step "sample-img"
 $D sample-img --model "$T/img.safetensors" --n 4 --steps 4 --png "$T/img.png" \
     --progress "$T/img-progress.png" --real "$T/img-real.png"
+step "classifier (shapes)"
+$D classifier --data shapes --size 8 --channels 3 --hidden 16 --steps 20 --log-every 10 -o "$T/clf.safetensors"
+step "measure"
+$D measure --model "$T/img.safetensors" --classifier "$T/clf.safetensors" --n 20 --steps 4
 python3 -c 'import sys; sys.exit(open(sys.argv[1], "rb").read(8) != b"\x89PNG\r\n\x1a\n")' "$T/img.png"
 grep -q '<circle' "$T/m-flow.svg"
 printf '\nEvery command ran.\n'

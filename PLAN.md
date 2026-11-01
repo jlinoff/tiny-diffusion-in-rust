@@ -50,7 +50,8 @@ names are explained where they first appear.
   - [What it adds](#what-it-adds)
   - [How it will be tested](#how-it-will-be-tested)
   - [Predictions](#predictions-2)
-  - [Running it (planned)](#running-it-planned)
+  - [What was built so far](#what-was-built-so-far)
+  - [Running it](#running-it-2)
 - [Stage 5: looking inside](#stage-5-looking-inside)
 - [Stage 6: text, later](#stage-6-text-later)
   - [How text diffusion works](#how-text-diffusion-works)
@@ -1187,15 +1188,42 @@ Written before any code. Each gives its mechanism and a numeric check.
    with agreement and confidence within 3 points of 7 × 7's. Mechanism:
    stage 3 found the two patch sizes give the same images on digits.
 
-### Running it (planned)
+### What was built so far
+
+Stage 4 is built in two steps: the instrument first, because every later
+measurement depends on it, then the conditioning.
+
+- `classify.rs`: the classifier as planned (two hidden layers of 256,
+  GELU between them, as in stage 2's network; 269,322 parameters, a test
+  checks the count), trained by cross-entropy with Adam, its file format,
+  and the measurements: confident, the share of images in each class,
+  agreement, overshoot, and variety (through `spread`, the average
+  distance between two images of a set). Tested: gradients against
+  finite differences, the tape and the direct computation agreeing, a
+  golden loss, files round-tripping, the measurements on cases worked
+  by hand, and learning to tell squares, discs and crosses apart on
+  shapes it never saw (92% when recorded, against a third by chance).
+- `diffusion classifier` trains it on a data set's training images and
+  reports its accuracy on the test images and on as many training
+  images (the check of prediction 2); `diffusion measure` generates
+  images with a model and reports what the classifier says about them.
+- The Makefile downloads the test images (`t10k-…`, 10,000 per set), and
+  `make help` now lists targets with digits in their names, which it
+  had silently left out (`digits-p7` among them).
+
+### Running it
 
 | Command | What it does |
 |---|---|
-| `make classifier` | downloads MNIST's test images, trains the classifier, reports its accuracy (minutes) |
-| `make measure-stage3` | the instrument on stage 3's models (prediction 3) |
-| `make digits-cond` | the conditional DiT, 7 × 7 patches (about 26 minutes) |
-| `make guidance` | grids and the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8 |
-| `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours) |
+| `make classifier` | downloads MNIST's test images, trains the classifier (5,000 steps of 128, about 11 passes over the data), reports its accuracy: a minute or two |
+| `make measure-stage3` | the instrument on stage 3's models, 1,000 samples each (prediction 3) |
+| `make digits-cond` | the conditional DiT, 7 × 7 patches (about 26 minutes): not built yet |
+| `make guidance` | grids and the measurement table at w = 0, 1, 1.5, 2, 3, 5 and 8: not built yet |
+| `make digits-cond-p4` | the 4 × 4 confirmation (about 1½ hours): not built yet |
+
+To measure any model directly:
+`diffusion/target/release/diffusion measure --model out/digits.safetensors
+--classifier out/classifier.safetensors` (options: `measure --help`).
 
 ## Stage 5: looking inside
 
@@ -1406,7 +1434,8 @@ tiny-diffusion-in-rust/
 ├── diffusion/     # the Rust crate: the library and the `diffusion` command
 │   ├── src/       # tensor, tape, blas, rng, safetensors (the foundation);
 │   │              # data2d, flow, ddpm, mlp, optim, train2d, svg, metrics (stage 2);
-│   │              # image, dit, trainimg (stage 3); main.rs, the commands
+│   │              # image, dit, trainimg (stage 3); classify (stage 4);
+│   │              # main.rs, the commands
 │   └── tests/data # test fixtures
 ├── docs/          # figures for this file and the README
 ├── tools/         # toc.py: this file's table of contents and link check;

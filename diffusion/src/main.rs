@@ -5,8 +5,16 @@
 //! - `sample2d`: generate points, measure them against the data, plot them
 //! - `steps2d`: how the result changes with the number of sampling steps
 //! - `exact`: the same question with the exact Gaussian fields, no network
+//!
+//! Stage 3, images: `train-img`, `sample-img`.
+//!
+//! Stage 4, conditioning: `classifier` trains the measuring instrument, and
+//! `measure` uses it on a model's samples.
 
 use clap::{Parser, Subcommand};
+use mini_diffusion::classify::{
+    measure, Classifier, ClassifierConfig, ClassifierTraining, CONFIDENT,
+};
 use mini_diffusion::data2d::{self, noise, sample};
 use mini_diffusion::ddpm::{self, gaussian_eps, Schedule};
 use mini_diffusion::dit::{Dit, DitConfig};
@@ -18,7 +26,7 @@ use mini_diffusion::rng::Rng;
 use mini_diffusion::svg::{figure, grid, Panel};
 use mini_diffusion::tensor::Mat;
 use mini_diffusion::train2d::{train, Objective, TrainConfig};
-use mini_diffusion::trainimg::{ImgTrainConfig, Source};
+use mini_diffusion::trainimg::{labelled, ImgTrainConfig, Source};
 use mini_diffusion::{blas, safetensors};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -190,6 +198,55 @@ enum Command {
         #[arg(long, default_value_t = 3)]
         zoom: usize,
     },
+    /// Train the digit classifier, stage 4's measuring instrument.
+    Classifier {
+        /// mnist, fashion or shapes.
+        #[arg(long, default_value = "mnist")]
+        data: String,
+        #[arg(long, default_value = "data")]
+        data_dir: PathBuf,
+        /// For shapes: the image side, in pixels.
+        #[arg(long, default_value_t = 28)]
+        size: usize,
+        /// For shapes: 1 (grayscale) or 3 (color).
+        #[arg(long, default_value_t = 1)]
+        channels: usize,
+        /// Neurons per hidden layer.
+        #[arg(long, default_value_t = 256)]
+        hidden: usize,
+        /// Hidden layers.
+        #[arg(long, default_value_t = 2)]
+        layers: usize,
+        #[arg(long, default_value_t = 5000)]
+        steps: u64,
+        #[arg(long, default_value_t = 128)]
+        batch: usize,
+        #[arg(long, default_value_t = 1e-3)]
+        lr: f32,
+        #[arg(long, default_value_t = 100)]
+        warmup: u64,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(long, default_value_t = 500)]
+        log_every: u64,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Generate images with a DiT and measure them with the classifier.
+    Measure {
+        #[arg(long)]
+        model: PathBuf,
+        #[arg(long)]
+        classifier: PathBuf,
+        /// Images to generate and measure.
+        #[arg(long, default_value_t = 1000)]
+        n: usize,
+        /// Euler steps.
+        #[arg(long, default_value_t = 50)]
+        steps: usize,
+        #[arg(long, default_value_t = 2)]
+        seed: u64,
+    },
 }
 
 fn main() -> ExitCode {
@@ -208,7 +265,7 @@ fn run(command: Command) -> Result<(), String> {
             println!("diffusion {}", env!("CARGO_PKG_VERSION"));
             println!("  large matrix products: {}", blas::backend());
             println!(
-                "  stages built: foundation; points in a plane; images (PLAN.md, Order of work)"
+                "  stages built: foundation; points in a plane; images; stage 4 under way (PLAN.md, Order of work)"
             );
             Ok(())
         }
@@ -569,6 +626,139 @@ fn run(command: Command) -> Result<(), String> {
                 check_writable(&p)?;
                 write_grid(&p, &src.batch(n, seed, 0), shape, 8, zoom)?;
                 println!("Wrote {} (real {name} images)", p.display());
+            }
+            Ok(())
+        }
+        Command::Classifier {
+            data,
+            data_dir,
+            size,
+            channels,
+            hidden,
+            layers,
+            steps,
+            batch,
+            lr,
+            warmup,
+            seed,
+            log_every,
+            output,
+        } => {
+            check_writable(&output)?;
+            let train = labelled(&data, &data_dir, size, channels, false)?;
+            let test = labelled(&data, &data_dir, size, channels, true)?;
+            let classes = 1 + *train.labels.iter().max().unwrap_or(&0) as usize;
+            let cfg = ClassifierConfig {
+                inputs: train.shape.values(),
+                hidden,
+                layers,
+                classes,
+            };
+            let tc = ClassifierTraining {
+                steps,
+                batch,
+                learning_rate: lr,
+                warmup,
+                seed,
+            };
+            println!(
+                "Training a classifier ({} parameters: {} inputs, {layers} hidden layers of {hidden}, {classes} classes) on {data}: {} training images, {} test images; {steps} steps of {batch}",
+                cfg.parameters(),
+                cfg.inputs,
+                train.labels.len(),
+                test.labels.len()
+            );
+            println!("   step    loss        lr");
+            let mut clf = Classifier::new(cfg, seed);
+            let (mut sum, mut count) = (0.0f64, 0u64);
+            let start = Instant::now();
+            clf.train(&train, &tc, |step, loss| {
+                sum += loss as f64;
+                count += 1;
+                if step % log_every == 0 || step == steps {
+                    println!(
+                        "  {step:>5}   {:.4}  {:.2e}",
+                        sum / count as f64,
+                        tc.lr(step)
+                    );
+                    (sum, count) = (0.0, 0);
+                }
+            });
+            // Training accuracy on (up to) the first 10,000 training images,
+            // as many as the test set: a gap between the two means memorizing.
+            let k = train.labels.len().min(10_000);
+            let subset = mini_diffusion::image::Images {
+                shape: train.shape,
+                pixels: Mat::from_vec(k, cfg.inputs, train.pixels.data[..k * cfg.inputs].to_vec()),
+                labels: train.labels[..k].to_vec(),
+            };
+            let (tr, te) = (clf.accuracy(&subset), clf.accuracy(&test));
+            println!(
+                "Accuracy: {:.2}% on the test images, {:.2}% on {k} training images ({})",
+                100.0 * te,
+                100.0 * tr,
+                duration(start.elapsed().as_secs_f64())
+            );
+            let mut meta = BTreeMap::new();
+            meta.insert("data".to_string(), data);
+            meta.insert("steps".to_string(), steps.to_string());
+            meta.insert("test_accuracy".to_string(), format!("{te:.4}"));
+            meta.insert("train_accuracy".to_string(), format!("{tr:.4}"));
+            let f = clf.to_file(meta);
+            safetensors::write(&output, &f.tensors, &f.metadata)?;
+            println!("Wrote {}", output.display());
+            Ok(())
+        }
+        Command::Measure {
+            model,
+            classifier,
+            n,
+            steps,
+            seed,
+        } => {
+            let f = safetensors::read(&model)?;
+            let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
+            println!("{}", describe_checkpoint(&model, &f.metadata));
+            let cf = safetensors::read(&classifier)?;
+            let clf =
+                Classifier::from_file(&cf).map_err(|e| format!("{}: {e}", classifier.display()))?;
+            let shape = dit.cfg.image;
+            if clf.cfg.inputs != shape.values() {
+                return Err(format!(
+                    "the classifier takes {} values per image, the model makes {}",
+                    clf.cfg.inputs,
+                    shape.values()
+                ));
+            }
+            let acc = cf
+                .metadata
+                .get("test_accuracy")
+                .cloned()
+                .unwrap_or("?".into());
+            println!(
+                "Classifier {}: trained on {}, test accuracy {acc}",
+                classifier.display(),
+                cf.metadata.get("data").map(String::as_str).unwrap_or("?")
+            );
+            let x0 = noise(n, shape.values(), &mut Rng::new(seed));
+            let start = Instant::now();
+            let (out, _) = euler(x0, steps, |x, t| dit.predict(x, t), false);
+            println!(
+                "{n} images with {steps} Euler steps in {}",
+                duration(start.elapsed().as_secs_f64())
+            );
+            let ms = measure(&clf, &out, None);
+            println!(
+                "  confident (probability above {CONFIDENT}): {:.1}%",
+                100.0 * ms.confident
+            );
+            println!(
+                "  overshoot (pixel values outside -1 to 1): {:.2}%",
+                100.0 * ms.overshoot
+            );
+            println!("  share of images in each class:");
+            for (c, &k) in ms.counts.iter().enumerate() {
+                println!("    {c}: {:5.1}%", 100.0 * k as f64 / n.max(1) as f64);
             }
             Ok(())
         }

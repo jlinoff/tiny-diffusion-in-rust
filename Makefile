@@ -74,6 +74,15 @@ data/%/train-images-idx3-ubyte data/%/train-labels-idx1-ubyte:
 		curl -fL -o data/$*/$$f.gz $(URL_$*)/$$f.gz && gunzip -f data/$*/$$f.gz || exit 1; \
 	done
 
+# The test images: 10,000 per set, which no model trains on (the
+# classifier is checked on them, stage 4).
+data/%/t10k-images-idx3-ubyte data/%/t10k-labels-idx1-ubyte:
+	$(call hdr,download $* test images)
+	mkdir -p data/$*
+	for f in t10k-images-idx3-ubyte t10k-labels-idx1-ubyte; do \
+		curl -fL -o data/$*/$$f.gz $(URL_$*)/$$f.gz && gunzip -f data/$*/$$f.gz || exit 1; \
+	done
+
 .PHONY: data/mnist data/fashion
 data/mnist data/fashion: data/%: data/%/train-images-idx3-ubyte ## Download MNIST or Fashion-MNIST (make data/mnist).
 
@@ -113,6 +122,27 @@ digits: $(OUT)/digits.png ## Train the DiT on MNIST digits and draw samples: 1-2
 digits-p7: $(OUT)/digits-p7.png ## The same with 7x7 patches (16 tokens): about half an hour.
 fashion: $(OUT)/fashion.png ## The same on Fashion-MNIST, for comparison.
 shapes: $(OUT)/shapes.png ## A small DiT on synthetic 16x16 shapes, no download: minutes.
+
+# Stage 4, conditioning (PLAN.md). First the measuring instrument: a digit
+# classifier, trained on MNIST's training images and checked on its test
+# images. CLASSIFIER_ARGS passes options to it.
+CLASSIFIER_ARGS ?=
+
+$(OUT)/classifier.safetensors: data/mnist/train-images-idx3-ubyte data/mnist/t10k-images-idx3-ubyte | $(DIFFUSION) $(OUT)
+	$(call hdr,classifier)
+	$(DIFFUSION) classifier --data mnist $(CLASSIFIER_ARGS) -o $@
+
+.PHONY: classifier measure-stage3
+classifier: $(OUT)/classifier.safetensors ## Train the digit classifier, stage 4's measuring instrument: a minute or two.
+
+measure-stage3: $(OUT)/classifier.safetensors | $(DIFFUSION) ## The classifier on stage 3's digit models (they must exist: make digits digits-p7).
+	@for m in digits digits-p7; do \
+		test -f $(OUT)/$$m.safetensors || { echo "no $(OUT)/$$m.safetensors: train it first (make $$m)"; exit 1; }; \
+	done
+	$(call hdr,measure digits)
+	$(DIFFUSION) measure --model $(OUT)/digits.safetensors --classifier $<
+	$(call hdr,measure digits-p7)
+	$(DIFFUSION) measure --model $(OUT)/digits-p7.safetensors --classifier $<
 
 .PHONY: smoke
 smoke: $(DIFFUSION) ## Every command end to end on a tiny model, in seconds (tools/ci/smoke.sh).
@@ -160,6 +190,6 @@ clean: ## Remove generated files (keeps data/).
 .PHONY: help
 help: ## This help message.
 	$(call hdr,$@)
-	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
-		awk -F':.*## ' '{printf("   %-12s %s\n", $$1, $$2)}' | sort
+	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | \
+		awk -F':.*## ' '{printf("   %-15s %s\n", $$1, $$2)}' | sort
 	@printf "\n   Variables: CARGO_FEATURES=%s OUT=%s\n" "$(CARGO_FEATURES)" "$(OUT)"

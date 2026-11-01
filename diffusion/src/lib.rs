@@ -11,6 +11,7 @@
 //! its tests and from the command line alike.
 
 pub mod blas;
+pub mod classify;
 pub mod data2d;
 pub mod ddpm;
 pub mod dit;

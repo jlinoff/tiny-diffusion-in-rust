@@ -31,15 +31,9 @@ impl Source {
         channels: usize,
     ) -> Result<Source, String> {
         match name {
-            "mnist" | "fashion" => {
-                let d = data_dir.join(name);
-                let set = read_idx(
-                    &d.join("train-images-idx3-ubyte"),
-                    &d.join("train-labels-idx1-ubyte"),
-                )
-                .map_err(|e| format!("{e} (download it with: make data/{name})"))?;
-                Ok(Source::Fixed(set))
-            }
+            "mnist" | "fashion" => Ok(Source::Fixed(labelled(
+                name, data_dir, size, channels, false,
+            )?)),
             "shapes" => Ok(Source::Shapes { size, channels }),
             _ => Err(format!(
                 "unknown data set {name:?}: mnist, fashion or shapes"
@@ -68,6 +62,42 @@ impl Source {
             }
             Source::Shapes { size, channels } => shapes(n, *size, *channels, rng.next_u64()).pixels,
         }
+    }
+}
+
+/// A labelled set by name, its training images or (`test`) its separate
+/// test images: mnist and fashion from `data/<name>/` (the Makefile's
+/// downloads), or shapes, drawn here (20,000 to train, 2,000 to test, from
+/// different seeds).
+pub fn labelled(
+    name: &str,
+    data_dir: &Path,
+    size: usize,
+    channels: usize,
+    test: bool,
+) -> Result<Images, String> {
+    match name {
+        "mnist" | "fashion" => {
+            let d = data_dir.join(name);
+            let (prefix, target) = if test {
+                ("t10k", format!("data/{name}/t10k-images-idx3-ubyte"))
+            } else {
+                ("train", format!("data/{name}"))
+            };
+            read_idx(
+                &d.join(format!("{prefix}-images-idx3-ubyte")),
+                &d.join(format!("{prefix}-labels-idx1-ubyte")),
+            )
+            .map_err(|e| format!("{e} (download it with: make {target})"))
+        }
+        "shapes" => Ok(if test {
+            shapes(2000, size, channels, 2)
+        } else {
+            shapes(20000, size, channels, 1)
+        }),
+        _ => Err(format!(
+            "unknown data set {name:?}: mnist, fashion or shapes"
+        )),
     }
 }
 
