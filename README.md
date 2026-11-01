@@ -47,6 +47,7 @@ make moons-ddpm    # the same data by DDPM, sampled with DDIM and DDPM's own 1,0
 make stage2        # everything of stage 2: moons, rings, spiral, and the exact-field table
 make shapes        # stage 3: a small DiT on synthetic 16×16 shapes, no download: minutes
 make digits        # stage 3: the DiT on MNIST digits (downloads 10 MB): 1–2 hours on an M4
+make peek          # while it trains: samples from its latest checkpoint, out/peek.png and out/peek-progress.png
 make test          # every check: the tests, a smoke test of every command, formatting, lint
 make help          # every target
 ```

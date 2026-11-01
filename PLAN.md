@@ -584,6 +584,19 @@ sets or objectives.
   comparison, and the progress of single generations from noise to image.
 - `make digits` and `make fashion` download the data and train; `make
   shapes` needs no download.
+- **Watching a run as it trains**: `make peek` (in a second terminal)
+  samples from the latest checkpoint into `out/peek.png` and
+  `out/peek-progress.png`, the same as
+
+  ```
+  diffusion/target/release/diffusion sample-img --model out/digits.safetensors \
+      --png out/peek.png --progress out/peek-progress.png
+  ```
+
+  It uses the same seed every time, so successive peeks start from the
+  same noise and show the training alone; `PEEK_MODEL=` picks another
+  run. (How to read the two images: [How to read the
+  figures](#how-to-read-the-figures), Image grids.)
 
 **The default DiT**: width 128, 6 blocks, 4 heads, 4 × 4 patches (49
 tokens of 16 values for MNIST): 1,843,344 parameters, against Decision

@@ -461,6 +461,7 @@ fn run(command: Command) -> Result<(), String> {
                 m.insert("objective".to_string(), "flow".to_string());
                 m.insert("data".to_string(), data.clone());
                 m.insert("steps".to_string(), done.to_string());
+                m.insert("total_steps".to_string(), steps.to_string());
                 m.insert("seed".to_string(), seed.to_string());
                 m.insert("final_loss".to_string(), format!("{loss:.5}"));
                 m
@@ -530,6 +531,7 @@ fn run(command: Command) -> Result<(), String> {
         } => {
             let f = safetensors::read(&model)?;
             let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
+            println!("{}", describe_checkpoint(&model, &f.metadata));
             let shape = dit.cfg.image;
             let mut rng = Rng::new(seed);
             let x0 = noise(n, shape.values(), &mut rng);
@@ -571,6 +573,28 @@ fn run(command: Command) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// What a DiT checkpoint is: its data, the training step it was saved at
+/// (and of how many), and the loss then.
+fn describe_checkpoint(path: &Path, meta: &BTreeMap<String, String>) -> String {
+    let get = |k: &str| meta.get(k).map(String::as_str).unwrap_or("?");
+    let (done, total) = (get("steps"), get("total_steps"));
+    let progress = if total == "?" {
+        // Files written before total_steps was recorded.
+        format!("saved at step {done}")
+    } else if done == total {
+        format!("trained for {done} steps (finished)")
+    } else {
+        format!("a checkpoint at step {done} of {total}")
+    };
+    format!(
+        "Model {}: {} on {}, loss {}",
+        path.display(),
+        progress,
+        get("data"),
+        get("final_loss")
+    )
 }
 
 /// Seconds as "1 h 05 min", "3 min 20 s" or "12 s".

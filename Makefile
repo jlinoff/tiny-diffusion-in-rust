@@ -97,6 +97,17 @@ $(OUT)/%.png: $(OUT)/%.safetensors
 	$(call hdr,sample-img $*)
 	$(DIFFUSION) sample-img --model $< --png $@ --progress $(OUT)/$*-progress.png --real $(OUT)/$*-real.png
 
+# Look at a run while it trains: sample from its latest checkpoint (written
+# every 1,000 steps) into out/peek.png and out/peek-progress.png. Same seed
+# each time, so successive peeks start from the same noise and differ only
+# by the training. PEEK_MODEL picks the run: make peek PEEK_MODEL=out/fashion.safetensors
+PEEK_MODEL ?= $(OUT)/digits.safetensors
+
+.PHONY: peek
+peek: | $(DIFFUSION) ## Sample from a running image model's latest checkpoint (PEEK_MODEL).
+	@test -f $(PEEK_MODEL) || { echo "no $(PEEK_MODEL) yet: the first checkpoint comes at step 1,000"; exit 1; }
+	$(DIFFUSION) sample-img --model $(PEEK_MODEL) --png $(OUT)/peek.png --progress $(OUT)/peek-progress.png
+
 .PHONY: digits digits-p7 fashion shapes
 digits: $(OUT)/digits.png ## Train the DiT on MNIST digits and draw samples: 1-2 hours on an M4.
 digits-p7: $(OUT)/digits-p7.png ## The same with 7x7 patches (16 tokens): about half an hour.
