@@ -232,17 +232,19 @@ the example changes at every sampling step.
    velocity field as arrows, sample paths from noise to data, and how the
    result degrades with fewer Euler steps. Then DDPM on the same data, for
    comparison: what the 1,000 steps buy and cost.
-3. **Small images** (built: see [Stage 3](#stage-3-images)). A DiT on
+3. **Small images** (done: see [Stage 3](#stage-3-images)). A DiT on
    28 × 28 grayscale digits (see [Decisions](#decisions) for the data): patches, attention
    without the causal mask, adaLN conditioning on time, a velocity per
    pixel. Grids of generated digits as image files, and the same picture
    at successive steps of one generation, noise sharpening into a digit.
-4. **Conditioning and guidance.** The digit's class as a condition, and
-   classifier-free guidance: "draw a 7", and what the guidance scale
+4. **Conditioning and guidance** (next; its section is written before
+   any code, with its predictions). The digit's class as a condition,
+   and classifier-free guidance: "draw a 7", and what the guidance scale
    trades.
 5. **Looking inside** (optional): what the velocity field looks like at
    each t, which patches attend to which, and how early in generation the
-   digit's identity is settled.
+   digit's identity is settled (stage 3's progress rows already answer
+   that roughly: by t = 0.5).
 6. **Text, later** (optional): a masked diffusion language model on
    TinyStories (tiny-llm-in-rust's corpus of short, simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size (see [Text, later](#text-later)).
