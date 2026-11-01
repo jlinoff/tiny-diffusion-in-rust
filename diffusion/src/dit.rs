@@ -325,6 +325,37 @@ mod tests {
         assert!(bad.check().is_err());
     }
 
+    /// The parameter formulas of PLAN.md's "Where the weights are", term
+    /// by term, against the layout: the defaults with both patch sizes,
+    /// and odd sizes, so a change to the model shows up as a failure here
+    /// and a reminder to update the table.
+    #[test]
+    fn parameter_formulas_in_plan_md() {
+        let mut configs = vec![cfg(28, 28, 1, 4), cfg(16, 24, 3, 8)];
+        for patch in [4, 7] {
+            let mut c = cfg(28, 28, 1, patch);
+            (c.width, c.blocks, c.heads, c.freqs) = (128, 6, 4, 8);
+            configs.push(c);
+        }
+        for c in configs {
+            let (d, b, k) = (c.width, c.blocks, c.freqs);
+            let (v, n) = (c.patch_values(), c.tokens());
+            let patch = (v + 1) * d;
+            let pos = n * d;
+            let time = (2 * k + 2) * d + d * d + d;
+            let blocks = b * (18 * d * d + 15 * d);
+            let last = 2 * d * d + 2 * d + (d + 1) * v;
+            assert_eq!(patch + pos + time + blocks + last, c.parameters());
+            let closed = b * (18 * d * d + 15 * d) + 3 * d * d + (2 * v + n + 2 * k + 6) * d + v;
+            assert_eq!(closed, c.parameters());
+        }
+        let mut c = cfg(28, 28, 1, 4);
+        (c.width, c.blocks, c.heads, c.freqs) = (128, 6, 4, 8);
+        assert_eq!(c.parameters(), 1_843_344);
+        c.patch = 7;
+        assert_eq!(c.parameters(), 1_847_601);
+    }
+
     /// adaLN-Zero: every gate and the output layer start at zero, so the
     /// untrained DiT predicts exactly 0.
     #[test]

@@ -657,15 +657,31 @@ and at the end one shared matrix turns each token's 128 numbers back
 into 16 values, the velocity of its pixels. (A language model ends
 differently: a probability for every word of its vocabulary.)
 
-Where the 1,843,344 parameters of the default DiT sit:
+Where the 1,843,344 parameters of the default DiT sit, with the formula
+for each in the hyperparameters: d the width (128), B the blocks (6),
+p the patch side (4), c the channels (1), v = p²c the values per patch
+(16), N = (H/p)(W/p) the tokens for an H × W image (49), and k the time
+frequencies (8):
 
-| Weights | Parameters | Used by |
-|---|---|---|
-| Patch matrix and bias: 16 pixel values to 128 numbers | 2,176 | every patch |
-| Position vectors: one row of 128 per patch position | 6,272 | one position each |
-| Time network: t to 128 numbers | 18,816 | every patch |
-| 6 blocks: attention, feed-forward, adaLN | 1,780,992 | every patch |
-| Final adaLN and output matrix: 128 numbers to 16 | 35,088 | every patch |
+| Weights | Formula | Parameters | Used by |
+|---|---|---|---|
+| Patch matrix and bias: v pixel values to d numbers | (v + 1)d | 2,176 | every patch |
+| Position vectors: one row of d per patch position | Nd | 6,272 | one position each |
+| Time network: t, then a sine and a cosine at each of k frequencies (2k + 1 numbers), through two layers to d | (2k + 2)d + d² + d | 18,816 | every patch |
+| B blocks: adaLN 6d² + 6d, attention 4d² + 4d, feed-forward 8d² + 5d | B(18d² + 15d) | 1,780,992 | every patch |
+| Final adaLN and output matrix: d numbers to v | 2d² + 2d + (d + 1)v | 35,088 | every patch |
+| **Total** | B(18d² + 15d) + 3d² + (2v + N + 2k + 6)d + v | **1,843,344** | |
+
+Inside a block: adaLN is one d × 6d matrix with its bias, making the six
+modulation vectors (a scale, a shift and a gate for attention, and the
+same for the feed-forward layer); attention is the d × 3d matrix making
+queries, keys and values plus the d × d projection back; the
+feed-forward layer is d × 4d and 4d × d, with biases. The number of
+heads changes none of these: it splits the same d columns into groups.
+The total is dominated by the 18Bd² of the blocks, so doubling the width
+nearly quadruples the model, while the image size enters only through
+N, one row of d per token. A test (`parameter_formulas_in_plan_md`, in
+`dit.rs`) checks every formula here against the model's actual layout.
 
 97% of the weights are in the blocks, and they treat every patch alike.
 The only weights belonging to a place are the position vectors, 49 rows
