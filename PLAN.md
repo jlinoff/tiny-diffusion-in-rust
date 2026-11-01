@@ -751,6 +751,28 @@ texture (pure black, fully white strokes) before its structure (strokes
 that join into a whole digit), which needs distant patches to agree:
 attention's job, and the slower thing to learn.
 
+**MNIST at steps 6,000 and 10,000** (checkpoints; 10,000 is halfway).
+The strokes join up. At 6,000 many samples are recognizable digits and
+the rest malformed. At 10,000 the strokes are thicker and continuous,
+with the speckle mostly gone, and by a quick count about half of the 64
+samples are clear digits (0, 1, 2, 5, 7, 8 and 9 among them). The rest
+are digit-like scribbles: a loop with a stray tail, two strokes that
+don't meet, a shape with an arrowhead, a few dots left beside a stroke.
+The same starting noise can become a different digit at a later
+checkpoint: training moves the velocity field, the boundaries between
+the regions of noise that flow to each digit move with it, and a
+starting point near a boundary changes sides. Prediction 3 holds at
+every checkpoint: in the progress rows the digit is decided by the
+middle column, and the later columns only clean it up.
+
+A prediction for the end of the run, written at step 10,000: more clear
+digits, perhaps two-thirds, but scribbles remain. The second half of
+the run mostly polishes. Its learning rate is now about 57% of the peak
+and falls to 10% by the end, so the model takes ever smaller steps
+instead of learning new structure, and a 1.8-million-parameter model
+that isn't told which digit to draw will keep producing some shapes
+that lie between digits.
+
 ## Text, later
 
 Diffusion isn't only for images. This section describes how it works on
