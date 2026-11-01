@@ -1325,6 +1325,68 @@ a reason that has nothing to do with guidance. Revised before any
 guided sample exists: **at margin 0.25, overshoot near 0% at w = 1 and
 above 5% at w = 8.**
 
+**The conditional model** (`make digits-cond`: 7 × 7 patches, 26 min 10
+s; mean loss over the last 500 steps 0.1763, against 0.1935 for the same
+model without labels, and below even the 4 × 4 unconditional model's
+0.1774: told which digit to draw, the model no longer hedges between
+digits, and part of the loss floor was that hedging). `make guidance`,
+1,000 images per row, 100 of each digit, the same noise in every row:
+
+| w | Agreement | Confident | Variety | Overshoot (margin 0.25) | Time |
+|---|---|---|---|---|---|
+| 0 (unconditional) | | 62.2% | | 0.00% | 14 s |
+| 1 | 93.2% | 93.4% | 0.99 | 0.00% | 14 s |
+| 1.5 | 98.8% | 99.1% | 0.95 | 0.00% | 28 s |
+| 2 | 99.7% | 99.7% | 0.92 | 0.00% | 29 s |
+| 3 | 100.0% | 100.0% | 0.88 | 0.00% | 28 s |
+| 5 | 100.0% | 100.0% | 0.84 | 0.00% | 28 s |
+| 8 | 100.0% | 100.0% | 0.82 | 0.09% | 28 s |
+
+- **1, cost: right.** 1,849,009 parameters, about 1,620 images per
+  second and 26 minutes, the same as without labels; guided sampling 28
+  seconds per 1,000 images against 14, twice as slow.
+- **4, the label removes the blends: right, and better than its
+  check.** At w = 1, 93.2% agreement (predicted 85 to 95%) and 93.4%
+  confident, against stage 3's 74.2% for the same patch size. The check
+  estimated about 85% confident, by assuming half of stage 3's failures
+  were scribbles that a label wouldn't fix; more of them were fixable
+  than that. The grid at w = 1 shows where the rest are: one column
+  (one starting noise) gives a malformed digit in most rows, whatever
+  digit is asked for. Some noises are bad starting points for any digit,
+  a second thing the noise decides besides the style.
+- **5, guidance trades variety for clarity: right on the trade, wrong
+  on the breakdown.** Agreement and confidence reach 100% by w = 3, and
+  variety falls steadily, 0.99, 0.95, 0.92, 0.88, 0.84, 0.82: the
+  digits grow bolder and more alike, each class converging on a typical
+  member. Variety at w = 3 is 0.88, just above the predicted 0.7 to
+  0.85. But nothing breaks at w = 8: its grid is nearly identical to
+  w = 5's, every digit clean, and overshoot is 0.09%, far below the
+  predicted 5%. The numeric check was wrong in a way worth recording: it
+  took the largest difference between the conditional and unconditional
+  velocities, where the digit is being decided, and assumed it lasted.
+  It doesn't. Once an image is clearly a 7, the unconditional model also
+  sees a 7 coming (the image no longer lies near a boundary between
+  digits), the two velocities agree, and their difference, which
+  guidance amplifies, shrinks towards 0 on its own. Guidance pushes hard
+  early, while the digit is undecided, and hardly at all at the end,
+  where overshoot would be measured. At this scale, w = 8 is not yet
+  "overdone".
+- **6, the noise decides the style: right for slant and thickness,
+  weak for position.** Correlation between two digits drawn from the
+  same noise, against different noise: slant 0.56 against −0.07
+  (predicted above 0.5 and near 0), ink 0.65 against −0.09, but the
+  centre only 0.20 across and 0.33 down. The likely reason for the weak
+  position: MNIST's digits were centred by their centre of mass when the
+  set was made (LeCun et al. 1998), so there is little variation in
+  position for the noise to decide.
+- **7, the unconditional mode is a little worse: wrong, narrowly.** At
+  w = 0 the model is 62.2% confident, against `digits-p7`'s 74.2%: 12
+  points worse, beyond the 10 allowed. The direction was right. A tenth
+  of the training examples buys an unconditional mode, but not as good
+  a one as a model trained only for it; the shared weights carry over
+  less than I guessed.
+- **8, the 4 × 4 confirmation**: not yet run.
+
 ## Stage 5: looking inside
 
 Optional, and planned in detail only when stage 4 is done. Its
