@@ -744,7 +744,11 @@ What the choice trades:
   pixels). A 7 × 7 patch must pack 49 pixels into one vector and produce
   all 49 back out of it, so fine detail inside a patch is harder to get
   right; the classic symptom is **block seams**, strokes that step or
-  break at the patch boundaries.
+  break at the patch boundaries. (Measured, this mattered less than
+  argued here: with d = 128, a token has more numbers than a 7 × 7
+  patch has pixels, so nothing needs packing, and the 7 × 7 run lost
+  its seams by the end: [Results so far](#results-so-far), prediction
+  6.)
 - **What attention can relate.** Attention connects patches. With small
   patches, how neighbouring bits of a stroke fit together is attention's
   job, the transformer's strength; with large ones, it's left to the
@@ -896,6 +900,41 @@ Against the predictions so far:
   strokes, the candidates not yet resolved. The whole sequence: 1 step
   the mean, 2 steps tangled blends, 4 steps ghost strokes, 10 steps
   close to 50.
+- **6, 7 × 7 patches: right on speed, wrong on blocking.** The run took
+  26 min 27 s at about 1,620 images per second, 3.6 times faster than
+  4 × 4's 1 h 35 min, a little better than the predicted third of the
+  time (16 tokens instead of 49 cut the matrix products about 3 times
+  and attention about 9 times). Blocking was plain at step 1,000:
+  digits built from rectangular slabs, strokes cut off along the
+  7-pixel grid, specks at patch corners. By step 10,000 it had mostly
+  trained away, and at the end no seams are visible. By a quick count
+  about 44 of the 64 samples are clear digits, as many as with 4 × 4
+  patches or a few more, and the 7 × 7 run was ahead of the 4 × 4 run
+  at step 10,000.
+
+  The loss disagrees with the eye: 0.1935 over the last 500 steps,
+  against 4 × 4's 0.1774, and behind at every step of the run. The
+  loss is the error of the velocity at every pixel and every t,
+  including the noisy middle of the path, where an error doesn't show
+  in the finished image; 9% more of it buys nothing visible at 28 × 28.
+  The likely reason for the miss is in [Choosing the patch
+  size](#choosing-the-patch-size): the argument assumed a patch must be
+  packed into its token, but a token of 128 numbers holds a 7 × 7
+  patch's 49 pixels with room to spare, and MNIST's smooth strokes are
+  easy for one matrix in and out to draw. The DiT paper's advantage for
+  small patches came on larger images and from more compute per image;
+  on 28 × 28 digits at this width, 4 × 4 patches cost 3.6 times as much
+  for a lower loss and no visible gain.
+
+**The same noise gives the same digit, whatever the patch size.** The
+4 × 4 and 7 × 7 models were trained separately, with different
+architectures, yet from the same starting noise they draw mostly the
+same digit in the same cell: the first row reads 7 9 · 0 1 · · 2 in
+both. They share the data and the training noise, and flow matching
+defines the target velocity field by the data, not the network, so two
+networks that learn it well enough carry the same noise to the same
+image. Which noise becomes which digit is a property of the data and
+the method, not of the model.
 
 ## Text, later
 
