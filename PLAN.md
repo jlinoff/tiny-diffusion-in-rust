@@ -34,11 +34,13 @@ names are explained where they first appear.
 - [How to read the figures](#how-to-read-the-figures)
 - [Stage 2: points in a plane](#stage-2-points-in-a-plane)
   - [What was built](#what-was-built)
+  - [Running it](#running-it)
   - [Predictions](#predictions)
   - [Exact fields, no network](#exact-fields-no-network)
   - [Results](#results)
 - [Stage 3: images](#stage-3-images)
   - [What was built](#what-was-built-1)
+  - [Running it](#running-it-1)
   - [Choosing the patch size](#choosing-the-patch-size)
   - [Predictions](#predictions-1)
   - [Results so far](#results-so-far)
@@ -419,7 +421,32 @@ answer, since flow's velocity has no division by a small number.
   `metrics.rs` (the energy distance, below), and the tape's new fused
   mean-squared-error operation.
 - Commands: `diffusion train2d`, `sample2d`, `steps2d` and `exact`, and
-  `make` targets for each data set.
+  `make` targets for each data set (next).
+
+### Running it
+
+One `make` target per data set trains flow matching on it and draws both
+figures; each takes under a minute on the M4:
+
+| Command | Trains | Figures in `out/` |
+|---|---|---|
+| `make moons` | flow on two half-moons | `moons-flow.svg`, `moons-flow-steps.svg` |
+| `make spiral` | flow on a spiral | `spiral-flow.svg`, `spiral-flow-steps.svg` |
+| `make rings` | flow on eight blobs in a ring | `rings-flow.svg`, `rings-flow-steps.svg` |
+| `make gaussian` | flow on one Gaussian, the case with an exact answer | `gaussian-flow.svg`, `gaussian-flow-steps.svg` |
+| `make moons-ddpm` | DDPM on the moons, for comparison | `moons-ddpm.svg`, `moons-ddpm-steps.svg` |
+| `make exact` | nothing: the samplers with the exact Gaussian fields | a table, printed |
+| `make stage2` | all of the above but `gaussian` | |
+
+Any data set with either objective can be asked for by its file name:
+`out/<data>-<objective>.svg` (samples, paths and, for flow, the velocity
+field) and `out/<data>-<objective>-steps.svg` (samples by number of
+steps), with `<data>` one of moons, spiral, rings or gaussian and
+`<objective>` flow or ddpm; for example `make out/spiral-ddpm-steps.svg`.
+The model goes in `out/<data>-<objective>.safetensors`, and
+`TRAIN2D_ARGS` passes options to training, as in
+`make moons TRAIN2D_ARGS='--steps 2000 --width 64'` (every option:
+`diffusion/target/release/diffusion train2d --help`).
 
 **Measuring a result: the energy distance.** For generated points X and
 data points Y it's 2·mean|x − y| − mean|x − x′| − mean|y − y′|, over all
@@ -579,7 +606,7 @@ sets or objectives.
   untrained model predicts exactly 0 (a test checks it). Its gradients
   are checked against finite differences, whole.
 - `trainimg.rs` and the commands `diffusion train-img` and `sample-img`:
-  flow matching on images, checkpoints every 1,000 steps (so a long run
+  flow matching on images (not DDPM: [Decisions](#decisions), 6), checkpoints every 1,000 steps (so a long run
   can be sampled while it continues), grids of samples, real images for
   comparison, and the progress of single generations from noise to image.
 - `make digits` and `make fashion` download the data and train; `make
@@ -603,6 +630,25 @@ tokens of 16 values for MNIST): 1,843,344 parameters, against Decision
 3's guess of 1.2 million. The guess counted the attention and
 feed-forward weights (12d² per block) but not adaLN's, a d × 6d matrix per
 block, half as many again.
+
+### Running it
+
+| Command | Trains | Images in `out/` |
+|---|---|---|
+| `make shapes` | a small DiT on synthetic 16 × 16 shapes, no download: minutes | `shapes.png`, `shapes-progress.png`, `shapes-real.png` |
+| `make digits` | the default DiT on MNIST (downloaded into `data/mnist`): 1–2 hours on the M4 | `digits.png`, `digits-progress.png`, `digits-real.png` |
+| `make digits-p7` | the same with 7 × 7 patches: about half an hour | `digits-p7.png`, … |
+| `make fashion` | the default DiT on Fashion-MNIST (`data/fashion`) | `fashion.png`, … |
+| `make peek` | nothing: samples from a running model's latest checkpoint | `peek.png`, `peek-progress.png` |
+
+`IMG_ARGS` passes options to training for digits and fashion, as in
+`make digits IMG_ARGS='--steps 5000'`, and `SHAPES_ARGS` replaces the
+shapes run's (size, width and so on: `diffusion train-img --help` lists
+them). An image model is retrained only on purpose, with `make -B`: a
+code change doesn't trigger a run of an hour or more. To sample a model
+differently (more images, fewer steps, another seed):
+`diffusion/target/release/diffusion sample-img --model out/digits.safetensors
+--steps 10 --png out/digits-s10.png` (every option: `sample-img --help`).
 
 ### Choosing the patch size
 
@@ -852,6 +898,23 @@ here as they come up, and stay open until settled.
    --channels C`), so larger images can be tried without a download.
    Training starts on MNIST, as decided; CIFAR-10 (32 × 32, color) would
    be the natural next data set.
+6. **Images are trained by flow matching only; DDPM stays a stage-2
+   comparison.** Decided after stage 2's measurements, for four reasons:
+   - *fewer steps for the same quality*: on the moons, flow at 64 Euler
+     steps beat DDPM's full 1,000-step sampler, and DDIM's shortcut
+     levelled off higher (about 0.003 against flow's 0.0009);
+   - *no explosion at few steps*: DDIM's first jump multiplies the
+     network's errors by about 157, which ruined its 1-step result; flow
+     has no such division;
+   - *simplicity*: one straight-line mixing and a velocity to predict,
+     against a 1,000-step schedule and two samplers;
+   - *current practice*: recent image models, such as Stable Diffusion 3,
+     are trained by flow matching (Esser et al. 2024).
+
+   The comparison itself was the point of DDPM here, and stage 2 made
+   it, on data small enough to measure exactly. DDPM for images would
+   reuse the DiT unchanged (only the target and the sampler differ), so
+   it remains a small experiment if ever wanted.
 
 ## Where things live
 
