@@ -773,6 +773,35 @@ instead of learning new structure, and a 1.8-million-parameter model
 that isn't told which digit to draw will keep producing some shapes
 that lie between digits.
 
+**MNIST at the end, step 20,000** (1 h 35 min; mean loss over the last
+500 steps 0.1774, against 0.187 at step 10,000). The end-of-run
+prediction was about right, a little on the generous side: by a quick
+count about 40 of the 64 samples are clear digits, every digit from 0
+to 9 among them, against about half at step 10,000. The strokes are
+smoother and more even, and the stray dots are nearly gone. The
+remaining third are what predicted: blends (an *a* that's half 9, a 9
+that's half 4), and a handful of scribbles that aren't any digit. Set
+beside `digits-real.png`, the generated strokes are slightly thicker
+and wobblier than real handwriting, and no block seams are visible at
+4 × 4 patches. The samples use the same starting noise as the
+checkpoint grids, so the same cell can be compared across the run. In
+the first row, the dotted, broken 3 of step 10,000 is now one clean
+stroke; the 9 has closed into an 8; and the arrowhead scribble is a
+slanted 1: more starting points changing sides as the field moved. The
+progress grid shows the same coarse-to-fine order as every checkpoint:
+each digit is decided by t = 0.5 and only sharpened after.
+
+Against the predictions so far:
+
+- **2, digits appear early: right on timing, half right on the end
+  state.** Digits were recognizable by step 2,000 and most were by
+  6,000, as predicted, though the early flaw was broken, speckled
+  strokes rather than blur. "Clean ones by the end" holds for about
+  two-thirds of samples, not all; the ambiguous blends predicted are
+  there.
+- **3, coarse to fine: right**, at every checkpoint and at the end.
+- **4, fewer steps blur**: not yet measured.
+
 ## Text, later
 
 Diffusion isn't only for images. This section describes how it works on

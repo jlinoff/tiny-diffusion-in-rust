@@ -11,11 +11,15 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: stage 2 of 6, points in a plane.** Flow matching and DDPM (the
-original diffusion recipe) on 2D data, with plots of the samples, the paths
-from noise to data, and the learned velocity field; the next stage is
-images of digits. Every stage arrives with its tests, and `make test` and
-continuous integration have run from the first commit.
+**Status: stage 3 of 6, images.** Stage 2 did flow matching and DDPM
+(the original diffusion recipe) on 2D data, with plots of the samples,
+the paths from noise to data, and the learned velocity field. Stage 3
+trains a 1.8-million-parameter diffusion transformer on the MNIST
+handwritten digits (a classic set of 60,000 small images) in
+about an hour and a half on a laptop; about two-thirds of its samples
+are clear digits. The comparisons with larger patches and with clothing
+images are still to run. Every stage arrives with its tests, and
+`make test` and continuous integration have run from the first commit.
 
 ![Moons: data, generated points, their paths from noise, and the learned velocity field](docs/moons-flow.svg)
 
