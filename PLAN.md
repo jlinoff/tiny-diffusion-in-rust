@@ -60,6 +60,10 @@ names are explained where they first appear.
   - [What stage 4 taught](#what-stage-4-taught)
 - [Stage 5: looking inside](#stage-5-looking-inside)
   - [Where it fits](#where-it-fits-4)
+  - [What it adds](#what-it-adds-1)
+  - [How it will be tested](#how-it-will-be-tested-1)
+  - [Predictions](#predictions-3)
+  - [Running it (planned)](#running-it-planned)
 - [Stage 6: text, later](#stage-6-text-later)
   - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
@@ -81,6 +85,12 @@ Two more, used here: **BLAS** (Basic Linear Algebra
 Subprograms, the standard interface for fast matrix products, here
 Apple's Accelerate library on macOS) and **GFLOP** (a billion
 floating-point operations; GFLOP/s, a billion per second).
+
+**Notation.** A raised dot is multiplication by a number: in
+x_t = (1 − t)·x₀ + t·x₁, the number 1 − t multiplies every value of the
+noise x₀ (every pixel, for an image) and t every value of the data x₁.
+It is never a dot product, and × in the text means "by", as in a 28 × 28
+image, never a cross product.
 
 ### What a diffusion model does
 
@@ -1614,15 +1624,117 @@ samples. This one looks inside the trained models, as tiny-llm-in-rust's
 computes along the way from noise to image. It needs no new model, and
 stage 4's classifier serves as one of its probes.
 
-Optional, and planned in detail only when stage 4 is done. Its
-questions, about the trained models rather than new ones: what the
-learned velocity field looks like at each t (as stage 2 plotted it for
-points, now as images of velocity); which patches attend to which, and
-whether that changes along the path; and when a digit's identity is
-settled. Stage 3's progress rows already answer the last roughly, by
-t = 0.5; this stage would measure it, for example by asking the stage 4
-classifier, at every step of a generation, which digit the image is
-becoming.
+Optional. Written before any code, as stage 4 was: the probes, their
+tests, and predictions with mechanisms and numeric checks. It reads
+stage 3's `digits` model (4 × 4 patches, no labels) and stage 4's
+`digits-cond-p4` (the same with labels), so it trains nothing.
+
+### What it adds
+
+Four probes, each a question the earlier stages answered only from
+outside.
+
+- **What is the model drawing, at each moment?** At any point of a
+  generation, one Euler step of the whole remaining way gives the
+  model's current guess of the finished image: x̂₁ = x_t + (1 − t)·v(x_t,
+  t), where the image would land if the velocity stayed as it is now.
+  It is the diffusion counterpart of tiny-llm-in-rust's logit lens,
+  which read the model's guess of the next word from its middle layers.
+  Shown as a **preview grid**, like the progress grid but with each
+  moment's guess in place of the noisy image; and measured by asking
+  the classifier which digit each guess is, at every step, against the
+  digit the generation ends as: the **commitment curve**, the fraction
+  of generations already heading for their final digit at each t.
+- **How far does guidance push, at each moment?** For the labelled
+  model, the size of v_cond − v_uncond, the difference guidance
+  amplifies, at each t (the average over images of its length, the
+  square root of the sum of its squared pixels). Stage 4 explained
+  guidance's self-limiting by this difference vanishing once a digit is
+  decided; this measures it.
+- **How straight are the paths?** For each generation, the straight-line
+  distance from noise to image divided by the length of the path the 50
+  Euler steps actually took: 1 for a straight path, less for a bent one.
+  Stage 3's "10 steps are nearly as good as 50" rested on the paths
+  being nearly straight; this measures how nearly, and where along the
+  path they bend.
+- **Which patches attend to which?** Attention weights recorded from
+  every block and head during a generation, at several t; shown for one
+  patch as a map over the image, and summarized as the **attention
+  distance**: the average distance, in patches, from each patch to the
+  patches it attends to, weighted by the attention. For comparison,
+  attention spread evenly over the 7 × 7 grid of patches would give
+  3.61 patches (the mean distance between two positions on the grid,
+  itself included), and attention to itself alone 0.
+
+### How it will be tested
+
+- **the guess of the finished image against a closed form**: with stage
+  2's exact velocity field for Gaussian data, x̂₁ at t = 0 is the data's
+  mean exactly, and at every t it is the conditional mean the formula
+  gives;
+- **straightness**: 1 for a straight path, and the right value for a
+  path bent by a known angle;
+- **recorded attention**: every row of weights sums to 1, and the
+  recorded weights times the values reproduce the attention output the
+  model computed;
+- **attention distance**: even weights give the closed-form value (3.61
+  for 7 × 7 patches, 2.01 for 4 × 4), weight on itself alone gives 0;
+- **class means**: computed from the labelled training images, checked
+  on a set worked by hand;
+- the commitment curve: 1 at every t for generations that never change
+  their guess, worked by hand.
+
+### Predictions
+
+Written before any code. Each gives its mechanism and a numeric check.
+
+1. **At t = 0 the model's guess is the average image.** For `digits`,
+   x̂₁ at t = 0 is MNIST's mean image, for every starting noise; for
+   `digits-cond-p4` asked for a 7, the mean of the 7s. Within 10% (the
+   distance between guess and mean, relative to the mean's own size).
+   Mechanism: at t = 0 the noise says nothing about which image it will
+   become, so the best guess of the image is its average, the same
+   reason one Euler step landed every sample on the mean in stage 3.
+   Check: a closed form, computed from the training images.
+2. **The digit is decided by t = 0.5.** The commitment curve is near
+   one class's share at t = 0 (every guess is the same mean image, which
+   the classifier calls one digit, so about 10% match their final
+   digit), rises most steeply between t = 0.2 and 0.5, and passes 90% by
+   t = 0.5. Mechanism: stage 3's progress rows showed each digit's shape
+   fixed by the middle column. Check: the progress grids show the shape
+   at columns 4 and 5, t = 0.375 and 0.5.
+3. **Guidance pushes early and stops.** For `digits-cond-p4`, the size of
+   v_cond − v_uncond at t = 0 equals the distance between the class's
+   mean image and the overall mean, averaged over the classes; it falls
+   to under 20% of that by t = 0.5 and under 5% by t = 0.9. Mechanism:
+   stage 4's explanation of why guidance didn't break: once the image
+   is clearly one digit, the unconditional model expects that digit too.
+   Check: at t = 0 a closed form, from the training images (the noise is
+   the same in both velocities, so their difference is the difference of
+   the means); afterwards, prediction 2's decision by t = 0.5.
+4. **The paths are nearly straight, bending early.** Mean straightness
+   between 0.9 and 0.98, and most of each path's bending in its first
+   half. Mechanism: flow matching trains on straight lines, and the
+   learned paths bend only where the model is still choosing between
+   images, which prediction 2 places before t = 0.5. Check: 10 Euler
+   steps were nearly as good as 50, but 4 left ghost strokes, so the
+   paths bend somewhat; well above 0.98 and 4 steps would have been
+   clean, well below 0.9 and 10 would not.
+5. **Attention reaches far early and stays near late.** For `digits`,
+   the attention distance averaged over blocks and heads is at least 20%
+   larger at t = 0.1 than at t = 0.9, and at t = 0.9 below the even
+   spread's 3.61. Mechanism: coarse to fine. Early, the model is fixing
+   the digit's layout, which needs distant patches to agree; late, it is
+   cleaning edges, which needs only neighbours. Check: only the
+   baselines, 3.61 for even attention and 0 for none; this is the
+   prediction most likely to be wrong, since nothing in stage 3 or 4
+   measured attention.
+
+### Running it (planned)
+
+| Command | What it does |
+|---|---|
+| `make inside` | all four probes on `digits` and `digits-cond-p4`: the tables, the preview grids, guidance's push by t, and attention maps (a few minutes) |
 
 ## Stage 6: text, later
 
