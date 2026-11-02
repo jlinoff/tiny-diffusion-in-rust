@@ -2522,6 +2522,49 @@ comes from finding neighbours with learned positions, as above:
    3.68, because a next-token model gets its first lessons through the
    residual stream and learns well with either kind of position.
 
+**Prediction 3: right, barely.** On TinyStories with RoPE, the masked
+model left the plateau at about step 700, and was still falling
+steeply when the learning rate ran down:
+
+| Step | 200 | 600 | 800 | 1,000 | 1,500 | 2,000 | Bound |
+|---|---|---|---|---|---|---|---|
+| Position table | 6.10 | 6.06 | 6.04 | 6.05 | 6.04 | 6.03 | 6.24 |
+| RoPE | 6.21 | 6.00 | 5.81 | 5.53 | 5.15 | 4.93 | 4.91 |
+
+The training loss ended at 4.93 (predicted under 5.0) and the bound at
+4.91 ± 0.05 (predicted 4.0 to 5.0), 52% above tiny-llm-in-rust's 3.23.
+Both checks passed with little room. On real text the escape came
+later than on the synthetic texts (about step 700 against step 200):
+real stories have no single neighbour that gives the answer away, so
+the useful attention patterns take longer to find.
+
+**The RoPE control: wrong, in the good direction.** Trained next-token
+with RoPE, the same network reached a validation loss of 3.30, 2.0%
+above tiny-llm-in-rust's 3.23 and 0.23 below the first control's 3.53
+(predicted 3.38 to 3.68). RoPE helps the next-token model too, by more
+than predicted. Its training loss led the first control's from step 200
+on (4.30 against 4.46; 2.84 against 3.09 at the end). So learned
+positions cost something even where the residual stream gives the
+first lessons for free. Not measured, only a likely reason: the next
+lessons after "which token follows this one" use the last few tokens
+("the" two back makes a noun likely), and with RoPE "two back" is one
+pattern for every position, as for the masked model.
+
+**The masked objective's cost, measured cleanly.** Same network (RoPE),
+same data, same 2,000 steps of 2,048 tokens:
+
+| Model | Held-out loss (nats per token) | Against the RoPE control |
+|---|---|---|
+| Next-token, RoPE (the control) | 3.30 | |
+| Masked diffusion, RoPE (bound) | 4.91 | +49% |
+| tiny-llm-in-rust's model, for reference | 3.23 | −2% |
+
+Two cautions in reading the 49%. The bound is an upper bound on the
+masked model's loss, while the control's figure is its loss itself.
+And the masked model was still falling fast at step 2,000, where the
+control was flattening (0.05 over its last 300 steps, against 0.21), so
+the gap at this budget overstates the gap at convergence.
+
 **Prediction 1: right.** With RoPE, the 50-token synthetic text at 256
 positions left the unigram level by step 200:
 
@@ -2755,8 +2798,9 @@ here as they come up, and stay open until settled.
    with one 4 × 4 run, to check that its conclusions don't depend on the
    patch size. `train-img` keeps 4 × 4 as its default, so `make digits`
    means what it did; stage 4's targets ask for `--patch 7` explicitly.
-8. **Stage 6's text model uses rotary positions (RoPE).** Proposed,
-   to be decided by prediction 3 (Stage 6 results so far). Stage 6's
+8. **Stage 6's text model uses rotary positions (RoPE).** Decided by
+   prediction 3 (Stage 6 results so far): with RoPE the masked model
+   left the plateau on TinyStories, bound 4.91 against 6.24. Stage 6's
    plan said tiny-llm-in-rust's network, with attention made
    bidirectional and nothing else changed, so that the two models would
    differ in their objective alone. That plan is set aside because:
@@ -2777,8 +2821,7 @@ here as they come up, and stay open until settled.
    a control with RoPE as well (`train-text --next-token --rope`): same
    network, same budget, masked against next-token, so the gap between
    them is the masked objective's alone. tiny-llm-in-rust's own model
-   stays in the table, for reference. If prediction 3 comes out right,
-   `make text` passes `--rope` and this decision is marked decided.
+   stays in the table, for reference. `make text` passes `--rope`.
 
 ## Where things live
 

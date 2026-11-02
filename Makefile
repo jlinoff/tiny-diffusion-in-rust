@@ -187,6 +187,7 @@ inside: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Stage 5: look inside the
 # Stage 6, text (PLAN.md): a masked diffusion language model on
 # tiny-llm-in-rust's tokenizer and corpus, read from its out/ folder
 # (LLM_OUT), and compared with its trained model there (model.safetensors).
+# The model uses rotary positions (--rope, Decision 8 in PLAN.md).
 # TEXT_ARGS passes options to train-text. TEXT_AR_SAMPLES is a file of
 # tiny-llm-in-rust's own stories (make llm-stories), measured beside this
 # model's when it exists.
@@ -199,7 +200,7 @@ $(OUT)/text.safetensors: | $(DIFFUSION) $(OUT)
 		test -f $(LLM_OUT)/$$f || { echo "no $(LLM_OUT)/$$f: run make encode in tiny-llm-in-rust, or set LLM_OUT"; exit 1; }; \
 	done
 	$(call hdr,train-text)
-	$(DIFFUSION) train-text --ids $(LLM_OUT)/corpus.ids \
+	$(DIFFUSION) train-text --ids $(LLM_OUT)/corpus.ids --rope \
 		$(if $(wildcard $(LLM_OUT)/model.safetensors),--compare $(LLM_OUT)/model.safetensors) $(TEXT_ARGS) -o $@
 
 .PHONY: text text-sample
