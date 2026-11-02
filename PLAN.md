@@ -1498,6 +1498,26 @@ digits, and part of the loss floor was that hedging). `make guidance`,
   architectures, trained separately, agree on which noises are bad
   starting points, as well as on what each noise becomes.
 
+The labelled 4 × 4 model's grids at w = 1 and w = 5 (`make guidance
+GUIDE_MODEL=out/digits-cond-p4.safetensors`; copied to `docs/` from
+`out/digits-cond-p4-w1.png` and `-w5.png`). Each row asks for one digit,
+0 at the top to 9 at the bottom; each column starts from the same noise
+(reading them: [How to read the figures](#how-to-read-the-figures),
+Image grids):
+
+| Guidance w = 1 | Guidance w = 5 |
+|---|---|
+| ![Digits 0 to 9, one per row, eight noises across, guidance 1](docs/digits-w1.png) | ![The same digits and noises at guidance 5](docs/digits-w5.png) |
+
+At w = 1 the digits are as varied as real handwriting (variety 0.99),
+and down each column they share a slant and a thickness: the noise
+deciding the style (prediction 6). The seventh column's noise gives a
+malformed 2, 5 and 8, and a 9 that looks like a 7: a bad start for
+most digits asked of it. At w = 5 every
+sample is the requested digit, bolder and more alike (variety 0.84),
+and that column is rescued: guidance trading variety for clarity
+(prediction 5).
+
 ### What stage 4 taught
 
 1. **Telling the model what to draw fixes most of its failures.** At

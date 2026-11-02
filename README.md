@@ -34,7 +34,8 @@ row, at three moments) to land on the two moons.
 | ![Digits 0 to 9, one per row, eight noises across, guidance 1](docs/digits-w1.png) | ![The same digits and noises at guidance 5](docs/digits-w5.png) |
 
 The same idea on images, with a request: each row asks the
-1.8-million-parameter model for one digit, and each column starts from
+1.8-million-parameter model (`digits-cond-p4`: labels, 4 × 4 patches)
+for one digit, and each column starts from
 the same noise, so the noise decides how the digit is written. At
 w = 1 (left), 94% of samples are the requested digit and as varied as
 real handwriting; at w = 5 (right), all are, bolder and more alike. One
