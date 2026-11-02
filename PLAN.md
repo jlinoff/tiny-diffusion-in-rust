@@ -30,15 +30,18 @@ names are explained where they first appear.
   - [Generation (inference)](#generation-inference)
 - [Order of work](#order-of-work)
 - [Foundation](#foundation)
+  - [Where it fits](#where-it-fits)
 - [Design for test](#design-for-test)
 - [How to read the figures](#how-to-read-the-figures)
 - [Stage 2: points in a plane](#stage-2-points-in-a-plane)
+  - [Where it fits](#where-it-fits-1)
   - [What was built](#what-was-built)
   - [Running it](#running-it)
   - [Predictions](#predictions)
   - [Exact fields, no network](#exact-fields-no-network)
   - [Results](#results)
 - [Stage 3: images](#stage-3-images)
+  - [Where it fits](#where-it-fits-2)
   - [What was built](#what-was-built-1)
   - [Where the weights are](#where-the-weights-are)
   - [Running it](#running-it-1)
@@ -47,6 +50,7 @@ names are explained where they first appear.
   - [Stage 3 results](#stage-3-results)
   - [What stage 3 taught](#what-stage-3-taught)
 - [Stage 4: conditioning and guidance](#stage-4-conditioning-and-guidance)
+  - [Where it fits](#where-it-fits-3)
   - [What it adds](#what-it-adds)
   - [How it will be tested](#how-it-will-be-tested)
   - [Predictions](#predictions-2)
@@ -54,7 +58,9 @@ names are explained where they first appear.
   - [Running it](#running-it-2)
   - [Stage 4 results](#stage-4-results)
 - [Stage 5: looking inside](#stage-5-looking-inside)
+  - [Where it fits](#where-it-fits-4)
 - [Stage 6: text, later](#stage-6-text-later)
+  - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
 - [Decisions](#decisions)
@@ -263,14 +269,16 @@ first, then the measurements, including the ones that turn out wrong.
 
 ## Foundation
 
-**Where it fits.** The project builds an image generator from nothing,
-to understand every piece of it. Before anything about diffusion, a
-model needs matrices and their products, a way to compute gradients so
-it can learn, random numbers that can be reproduced, and a file to keep
-what it learned in. tiny-llm-in-rust built and tested all four, so they
-are copied here rather than rebuilt, and this project starts at
-diffusion itself. Nothing in this section is specific to diffusion;
-every later stage stands on it.
+### Where it fits
+
+The project builds an image generator from nothing, to understand every
+piece of it. Before anything about diffusion, a model needs matrices and
+their products, a way to compute gradients so it can learn, random
+numbers that can be reproduced, and a file to keep what it learned in.
+tiny-llm-in-rust built and tested all four, so they are copied here
+rather than rebuilt, and this project starts at diffusion itself.
+Nothing in this section is specific to diffusion; every later stage
+stands on it.
 
 Copied from tiny-llm-in-rust's `transformer/src/` (each file says so at the
 top), and checked by its own tests, which came along:
@@ -441,18 +449,19 @@ answer, since flow's velocity has no division by a small number.
 
 ## Stage 2: points in a plane
 
-**Where it fits.** The whole idea of diffusion, shown where everything
-can be seen. A diffusion model learns a velocity field that carries
-noise to data, and generates by following it. With examples of two
-numbers each, the data, the learned field and the paths from noise to
-data can all be drawn on one page, and for Gaussian data the true field
-has a formula to check the network against. The network is a small MLP;
-flow matching comes first, then DDPM, the original recipe, for
-comparison. Everything after is this same idea with bigger data and a
-bigger network: stage 3 swaps the points for images and the MLP for a
-transformer, and keeps the training loop and the sampler. This stage
-also settled flow matching as the method for the rest
-([Decisions](#decisions), 6).
+### Where it fits
+
+The whole idea of diffusion, shown where everything can be seen. A
+diffusion model learns a velocity field that carries noise to data, and
+generates by following it. With examples of two numbers each, the data,
+the learned field and the paths from noise to data can all be drawn on
+one page, and for Gaussian data the true field has a formula to check
+the network against. The network is a small MLP; flow matching comes
+first, then DDPM, the original recipe, for comparison. Everything after
+is this same idea with bigger data and a bigger network: stage 3 swaps
+the points for images and the MLP for a transformer, and keeps the
+training loop and the sampler. This stage also settled flow matching as
+the method for the rest ([Decisions](#decisions), 6).
 
 ### What was built
 
@@ -632,15 +641,17 @@ sets or objectives.
 
 ## Stage 3: images
 
-**Where it fits.** The step from a toy to real images: handwritten
-digits of 28 × 28 pixels, 784 numbers per example, far too many to draw
-a field for. The network becomes a diffusion transformer (DiT), which
-cuts each image into patches and lets attention relate them; the
-training loop and the Euler sampler are stage 2's. The questions: does
-the idea carry over to images, what do the patch size and the number of
-steps trade, and what does the model learn first? Its limit is the
-starting point of stage 4: the model can't be told which digit to draw,
-and about a third of its samples land between digits.
+### Where it fits
+
+The step from a toy to real images: handwritten digits of 28 × 28
+pixels, 784 numbers per example, far too many to draw a field for. The
+network becomes a diffusion transformer (DiT), which cuts each image
+into patches and lets attention relate them; the training loop and the
+Euler sampler are stage 2's. The questions: does the idea carry over to
+images, what do the patch size and the number of steps trade, and what
+does the model learn first? Its limit is the starting point of stage 4:
+the model can't be told which digit to draw, and about a third of its
+samples land between digits.
 
 ### What was built
 
@@ -1086,14 +1097,16 @@ an unplanned payoff of designing for test.
 
 ## Stage 4: conditioning and guidance
 
-**Where it fits.** The step from generating something to generating
-what was asked for: the digit we want as an extra input, and guidance to
-strengthen its effect, the mechanism text-to-image systems use, at
-small scale. It reuses stage 3's DiT and training, with the patch size
-chosen from stage 3's results ([Decisions](#decisions), 7), and adds a
-measuring instrument, a digit classifier, so that results are counted
-rather than judged by eye. With it the generator is complete in the
-sense the project set out to reach: noise in, the requested image out.
+### Where it fits
+
+The step from generating something to generating what was asked for: the
+digit we want as an extra input, and guidance to strengthen its effect,
+the mechanism text-to-image systems use, at small scale. It reuses stage
+3's DiT and training, with the patch size chosen from stage 3's results
+([Decisions](#decisions), 7), and adds a measuring instrument, a digit
+classifier, so that results are counted rather than judged by eye. With
+it the generator is complete in the sense the project set out to reach:
+noise in, the requested image out.
 
 Written before any code: the plan, the tests, and the predictions, each
 with its mechanism and a numeric check (the convention from
@@ -1451,11 +1464,13 @@ digits, and part of the loss floor was that hedging). `make guidance`,
 
 ## Stage 5: looking inside
 
-**Where it fits.** The earlier stages build models and judge them from
-outside, by their samples. This one looks inside the trained models, as
-tiny-llm-in-rust's "Looking inside the model" did for its transformer:
-what the network computes along the way from noise to image. It needs
-no new model, and stage 4's classifier serves as one of its probes.
+### Where it fits
+
+The earlier stages build models and judge them from outside, by their
+samples. This one looks inside the trained models, as tiny-llm-in-rust's
+"Looking inside the model" did for its transformer: what the network
+computes along the way from noise to image. It needs no new model, and
+stage 4's classifier serves as one of its probes.
 
 Optional, and planned in detail only when stage 4 is done. Its
 questions, about the trained models rather than new ones: what the
@@ -1469,10 +1484,12 @@ becoming.
 
 ## Stage 6: text, later
 
-**Where it fits.** The same idea applied to text, where the noise is
-masking rather than static, and the point where the two projects meet:
-a diffusion language model compared with tiny-llm-in-rust's, at the
-same size and on the same stories.
+### Where it fits
+
+The same idea applied to text, where the noise is masking rather than
+static, and the point where the two projects meet: a diffusion language
+model compared with tiny-llm-in-rust's, at the same size and on the same
+stories.
 
 Optional, like stage 5. This section was written early, as an
 explanation, and the stage itself will be planned in detail when it
