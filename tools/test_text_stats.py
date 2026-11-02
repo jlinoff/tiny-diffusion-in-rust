@@ -1,7 +1,12 @@
 """Tests for text_stats.py, on texts worked by hand."""
 import unittest
 
-from text_stats import measure, stories, tiny_llm_stories
+import contextlib
+import io
+import os
+import tempfile
+
+from text_stats import main, measure, stories, tiny_llm_stories
 
 
 class TextStatsTest(unittest.TestCase):
@@ -43,6 +48,22 @@ class TextStatsTest(unittest.TestCase):
         self.assertEqual(text, "Once upon a time a cat.\n\nOnce upon a dog.")
         self.assertEqual(speed, 2500.0)
         self.assertEqual(tiny_llm_stories("nothing here"), ("", None))
+
+    def test_files_around_the_option(self):
+        """Files may come before and after --tiny-llm, as make text-sample
+        passes them (a mix argparse rejected until parsed intermixed)."""
+        with tempfile.TemporaryDirectory() as d:
+            paths = []
+            for name in ("a.txt", "b.txt", "c.txt"):
+                path = os.path.join(d, name)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("one two three")
+                paths.append(path)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = main([paths[0], "--tiny-llm", paths[1], paths[2]])
+            self.assertEqual(rc, 0)
+            self.assertEqual(out.getvalue().count(d), 3)
 
     def test_empty(self):
         """An empty text measures nothing."""

@@ -80,7 +80,8 @@ def main(argv=None):
     p.add_argument("files", nargs="*")
     p.add_argument("--tiny-llm", action="append", default=[], metavar="FILE",
                    help="a file of tiny-llm-in-rust's generate output")
-    a = p.parse_args(argv)
+    # Intermixed: files may come before and after --tiny-llm FILE.
+    a = p.parse_intermixed_args(argv)
     print(f"{'file':<40} {'words':>8} {'repetition':>11} {'distinct-2':>11}")
     for f in a.tiny_llm + a.files:
         try:

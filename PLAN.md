@@ -77,6 +77,7 @@ names are explained where they first appear.
   - [Predictions](#predictions-4)
   - [What was built](#what-was-built-3)
   - [Running it](#running-it-4)
+  - [Stage 6 results so far](#stage-6-results-so-far)
 - [Decisions](#decisions)
 - [Where things live](#where-things-live)
 - [Bibliography](#bibliography)
@@ -2271,6 +2272,74 @@ From this project's folder, with tiny-llm-in-rust beside it (or
 For prediction 2's check, tiny-llm-in-rust's validation loss at step
 1,000 and at 2,000 of the same run: from its training log, or
 `make -B train` there, which prints both.
+
+### Stage 6 results so far
+
+**The first run, at tiny-llm-in-rust's budget** (`make text`: 2,000 steps
+of 8 windows, 3 min 29 s on the M4):
+
+| | Masked diffusion | tiny-llm-in-rust |
+|---|---|---|
+| Parameters | 1,350,528 | 1,350,400 |
+| Training speed | about 19,500 tokens per second | about 15,000 (its PLAN.md) |
+| Held-out loss, nats per token | 6.24 (the diffusion bound) | 3.23 (validation loss, step 2,000) |
+
+The training loss fell from 8.3 (log 4,096) to about 6.06 in the first
+200 steps and then stayed there, 6.03 at step 2,000. That level is
+roughly what a model scores that knows only how common each token is
+and nothing of its context. The model never learned to use the words
+around a masked position, and its samples are strings of common tokens.
+
+- **1, training cost: right.** About 19,500 tokens per second, within
+  the factor of 1.5, and slightly faster than tiny-llm-in-rust's 15,000.
+- **2, the bound 10 to 30% above tiny-llm-in-rust's loss: wrong, by
+  far.** 93% above, because the model stalled before it learned
+  anything from context; the gap measures the stall, not the cost of
+  diffusion.
+- **3, slower than tiny-llm-in-rust at this size: right in direction,
+  off by a factor of 3 in size.** 970, 253 and 64 tokens per second at
+  16, 64 and 256 steps: about 16,000/S, against the predicted 45,000/S,
+  so a 256-position pass took about 16 ms, not 5.7. Diffusion is slower
+  than tiny-llm-in-rust's 2,300 tokens per second at every step count
+  tried, even 16.
+- **4 and 5** can't be judged on a model that only produces common
+  tokens: every early- and late-settled token was among the commonest
+  (median rank 0), and the repetition measures failed to run (a bug in
+  `text_stats.py`'s reading of its arguments, now fixed and tested).
+
+**Why it stalled: the plateau.** Every masked position starts from the
+same MASK row, which carries nothing about the hidden word, so
+everything the model can learn about it must come through attention
+from other positions. At the start attention is spread evenly over all
+T positions, so the one neighbour that would help contributes about
+1/T of what a position receives, and the gradient that would teach
+attention to look at neighbours is diluted to match. Until attention
+learns to find neighbours, the best the model can do is guess the
+commonest tokens, and it sits on that plateau. An autoregressive model
+has no such plateau: its current position holds a real token, the one
+before the word to predict, and the residual connection carries it
+straight to the output, so it learns which word tends to follow which
+in its first steps, before attention learns anything.
+
+Measured here, on a task where each token is the one before it plus 1
+(so a masked token is easy to recover from any neighbour), with this
+model and masking: the loss stayed at the uniform level, log 50, for
+about 350 steps with windows of 32 positions, and for about 2,600 steps
+with windows of 128, before falling within a few hundred steps to near
+0. The plateau grows faster than the window: 4 times the positions, 7
+times the steps. Larger initial position embeddings and other learning
+rates didn't shorten it. With 256 positions and real text, 2,000 steps
+weren't enough.
+
+**Next: the same model trained ten times longer** (`make -B text
+TEXT_ARGS='--steps 20000'`, about 35 minutes), to see whether it leaves
+the plateau and how close it then comes to tiny-llm-in-rust's loss.
+Prediction, written before that run: it leaves the plateau within the
+20,000 steps, and its bound ends within 30% of tiny-llm-in-rust's 3.23,
+below 4.2. Mechanism: the counting task's plateau, scaled from 128 to
+256 positions at the same rate, suggests 6,000 to 10,000 steps, leaving
+10,000 or more to learn; prediction 2's reasons for a gap remain.
+Check: only that scaling, from two points; low confidence.
 
 ## Decisions
 
