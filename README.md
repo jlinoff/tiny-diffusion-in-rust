@@ -11,8 +11,9 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: all six stages done: images on request, a look inside, and
-a diffusion language model.** Stage 2 did flow
+**Status: six stages done (images on request, a look inside, and a
+diffusion language model); stage 7, running a full-scale trained model
+through this code, is planned.** Stage 2 did flow
 matching and DDPM (the original diffusion recipe) on 2D data, with plots
 of the samples, the paths from noise to data, and the learned velocity
 field. Stage 3 trains a 1.8-million-parameter diffusion transformer on
@@ -90,6 +91,12 @@ The plots are SVG (Scalable Vector Graphics) files and the images PNG
 ## License
 
 MIT: see [LICENSE](LICENSE). This is meant for learning; use it freely.
+
+The repository holds no trained weights from anyone else. Stage 7
+(planned) will download two models from their own sources, each under
+its own licence: DiT-XL/2 under CC BY-NC 4.0 (non-commercial use only)
+and its autoencoder under MIT. PLAN.md, Stage 7, sets out the terms
+before any of it is built.
 
 ## Acknowledgments
 

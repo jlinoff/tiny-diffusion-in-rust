@@ -84,6 +84,10 @@ full; tool and product names are explained where they first appear.
   - [Running it](#running-it-4)
   - [Stage 6 results](#stage-6-results)
   - [What stage 6 taught](#what-stage-6-taught)
+- [Stage 7: a real model (planned)](#stage-7-a-real-model-planned)
+  - [Where it fits](#where-it-fits-6)
+  - [The models, and the terms of their use](#the-models-and-the-terms-of-their-use)
+  - [The plan](#the-plan)
 - [How far could this go?](#how-far-could-this-go)
   - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
@@ -439,6 +443,12 @@ the example changes at every sampling step.
    language model on TinyStories (tiny-llm-in-rust's corpus of short,
    simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size.
+7. **A real model** (planned, not started: see [Stage 7](#stage-7-a-real-model-planned)):
+   generating images with DiT-XL/2, the DiT paper's own trained model,
+   through this project's code, as tiny-llm-in-rust ran SmolLM (an
+   open-weight language model of 1.7 billion parameters). Its
+   weights are downloaded by the user under their own licences, never
+   kept in this repository.
 
 Each stage ends the way tiny-llm-in-rust's did: predictions written down
 first, then the measurements, including the ones that turn out wrong.
@@ -3043,6 +3053,81 @@ dialogue) but not the subject.
    starting from all MASK already knows how stories begin, so the
    failures seen here are the same problems, much enlarged.
 
+## Stage 7: a real model (planned)
+
+**Not started.** This section records the plan and, before any code,
+the terms under which the models it uses may be used.
+
+### Where it fits
+
+Stages 2 to 6 trained small models from scratch, small enough to read
+every weight. Stage 7 takes the other direction, the one
+tiny-llm-in-rust ended with when it ran SmolLM: load a model someone
+else trained at full scale and run it through this project's code. If
+this project's DiT, guidance and samplers are right, a model trained by
+others on 1.3 million photographs generates recognizable photographs
+through them; checked number for number against the official code, it
+is a proof that the small implementation is the real thing. It is also
+the project's first latent model: the photographs are generated as
+latents and decoded by an autoencoder ([Why latent models need their
+autoencoder](#why-latent-models-need-their-autoencoder)), level 1 of
+[What supporting latent diffusion would
+take](#what-supporting-latent-diffusion-would-take).
+
+### The models, and the terms of their use
+
+Two models, from two sources, under two licences. Neither is in this
+repository, and neither ever will be: the user downloads each from its
+source, into `models/` (ignored by git), and in doing so accepts its
+licence.
+
+| Model | Source | Licence | What it allows |
+|---|---|---|---|
+| DiT-XL/2, 256 × 256 (the diffusion transformer: 675 million parameters) | [facebook/DiT-XL-2-256](https://huggingface.co/facebook/DiT-XL-2-256), `transformer/` | CC BY-NC 4.0 (Creative Commons Attribution-NonCommercial 4.0) | use, copying and adaptation for **non-commercial** purposes only, with credit to its authors and a link to the licence |
+| the autoencoder (84 million parameters) | [stabilityai/sd-vae-ft-ema](https://huggingface.co/stabilityai/sd-vae-ft-ema) | MIT | any use, keeping the copyright and licence notice |
+
+The DiT repository holds a copy of the autoencoder too, under `vae/`,
+but stage 7 takes it from Stability AI's own repository, so that the
+only non-commercial part is the DiT model itself.
+
+What this means for a user of this project:
+
+- **This project's own code stays MIT**, as before: it contains no
+  weights, and reading a model file does not bring the model's licence
+  into the code that reads it.
+- **Running stage 7 is non-commercial use of DiT-XL/2.** Use it for
+  learning, teaching and research; not in a product, a paid service, or
+  work done for payment. The images it generates should be treated as
+  non-commercial too: the licence doesn't settle the status of a
+  model's outputs, so the safe reading is to keep them under the same
+  terms as the model.
+- **Credit**: anything that shows DiT-XL/2's images credits Peebles and
+  Xie (2023) and names the licence; `make` will print the credit with
+  every grid it writes.
+- **No redistribution from here**: the weights are fetched from their
+  sources by each user, not copied into this repository or its
+  releases.
+- **ImageNet itself is not used**: no training and no images from it,
+  only the model trained on it and the list of its 1,000 class names,
+  so that a class can be asked for by name.
+
+This is the reading of the licences as published on each model's page
+in November 2026; it isn't legal advice. Anyone unsure whether their
+use is non-commercial should read the licence itself
+([creativecommons.org/licenses/by-nc/4.0](https://creativecommons.org/licenses/by-nc/4.0/))
+or ask someone qualified.
+
+### The plan
+
+Generation only, no training, as level 1 describes: the DiT-XL/2
+forward pass in this project's DiT (its sizes, its time features, its
+learned variance, DDPM's noise target), DDIM sampling with guidance
+from stage 2 and stage 4, and the decoder, the project's first
+convolutional network. Checked as tiny-llm-in-rust checked SmolLM:
+reference outputs from the official Python code, compared number for
+number, before any image is looked at. Its own detailed plan and
+predictions will be written when the stage starts.
+
 ## How far could this go?
 
 tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
@@ -3162,9 +3247,9 @@ Three levels, in increasing cost:
 
 So the natural endpoint, matching tiny-llm-in-rust's SmolLM, is level
 1: DiT-XL/2 and its decoder, ImageNet images by class, drawn with this
-project's guidance. For text, the counterpart is MDLM, which needs
-rotary position embeddings (positions built into attention as
-rotations, as SmolLM's are) and the GPT-2 tokenizer.
+project's guidance. For text, the counterpart is MDLM, which needs the
+GPT-2 tokenizer and its own model's sizes; its rotary positions
+(RoPE), the other piece it needed, stage 6 has now built.
 
 ## Decisions
 
