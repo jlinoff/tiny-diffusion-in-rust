@@ -2346,6 +2346,21 @@ below 4.2. Mechanism: the counting task's plateau, scaled from 128 to
 10,000 or more to learn; prediction 2's reasons for a gap remain.
 Check: only that scaling, from two points; low confidence.
 
+**A diagnostic, prepared while that run trained:** lighter masking.
+`train-text --t-min 0.7` draws t from (0.7, 1), so at most 30% of each
+window is masked. If heavily masked windows are what hold the model on
+the plateau (their best guess barely depends on context, and they
+supply most of the masked tokens the loss averages over), it should
+leave the plateau much sooner. On the counting task with 128 positions,
+it did: the loss began falling at about step 300, against step 600 with
+full masking, and by step 1,000 stood at 2.04 against 3.65. Prediction
+for TinyStories, written before the run: with `--t-min 0.7`, the
+training loss falls clearly below the plateau, under 5.0, within the
+same 2,000 steps. A model that knows only how common each token is
+scores the same however much is masked, so a loss below the plateau
+means the model uses context. (Its diffusion bound, measured over all
+t, will be poor: it never trains on heavy masking.)
+
 ## How far could this go?
 
 tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its

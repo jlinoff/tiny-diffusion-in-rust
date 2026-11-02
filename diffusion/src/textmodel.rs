@@ -283,6 +283,11 @@ pub struct TextTraining {
     pub grad_clip: f32,
     pub beta2: f32,
     pub seed: u64,
+    /// The smallest t drawn: t is uniform on (t_min, 1), so at most
+    /// 1 − t_min of a window is masked. 0, the default, masks anywhere from
+    /// none to all; a larger value is the lighter masking of stage 6's
+    /// diagnostic (PLAN.md, Stage 6 results so far).
+    pub t_min: f64,
 }
 
 impl TextTraining {
@@ -316,7 +321,7 @@ pub fn train(
         let mut rng = Rng::stream(c.seed ^ 0x7E87, step);
         let (mut ids, mut targets) = (Vec::new(), Vec::new());
         for &s in &starts {
-            let t = rng.unit();
+            let t = c.t_min + (1.0 - c.t_min) * rng.unit();
             let (i, tg) = mask_window(&data[s..s + seq], t, model.cfg.mask(), &mut rng, true);
             ids.extend(i);
             targets.extend(tg);
@@ -680,6 +685,7 @@ mod tests {
             grad_clip: 1.0,
             beta2: 0.95,
             seed: 1,
+            t_min: 0.0,
         };
         let l = train(&mut m, &c.ids, &tc, |_, _| {});
         let got = [l[0], l[19], l[39]];

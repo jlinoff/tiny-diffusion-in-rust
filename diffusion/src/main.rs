@@ -339,6 +339,10 @@ enum Command {
         beta2: f32,
         #[arg(long, default_value_t = 1)]
         seed: u64,
+        /// Lighter masking: t drawn from (t-min, 1), so at most 1 - t-min of
+        /// each training window is masked (0: anywhere from none to all).
+        #[arg(long, default_value_t = 0.0)]
+        t_min: f64,
         /// The share of the tokens held out, at the end, as tiny-llm-in-rust.
         #[arg(long, default_value_t = 0.05)]
         valid_fraction: f64,
@@ -1016,6 +1020,7 @@ fn run(command: Command) -> Result<(), String> {
             grad_clip,
             beta2,
             seed,
+            t_min,
             valid_fraction,
             valid_windows,
             draws,
@@ -1054,6 +1059,7 @@ fn run(command: Command) -> Result<(), String> {
                 grad_clip,
                 beta2,
                 seed,
+                t_min,
             };
             println!(
                 "Training a masked diffusion language model ({} parameters: width {width}, {blocks} blocks, {heads} heads, context {context}, V = {} + MASK) on {}: {} training tokens, {} held out; {steps} steps of {batch} windows",
@@ -1063,6 +1069,12 @@ fn run(command: Command) -> Result<(), String> {
                 tr.len(),
                 va.len()
             );
+            if t_min > 0.0 {
+                println!(
+                    "  lighter masking: at most {:.0}% of each window masked",
+                    100.0 * (1.0 - t_min)
+                );
+            }
             println!("   step    loss        lr   tokens/s   remaining");
             let mut model = TextModel::new(cfg, seed);
             let (mut sum, mut count, mut tick) = (0.0f64, 0u64, Instant::now());
@@ -1118,6 +1130,7 @@ fn run(command: Command) -> Result<(), String> {
             meta.insert("data".to_string(), ids.display().to_string());
             meta.insert("steps".to_string(), steps.to_string());
             meta.insert("seed".to_string(), seed.to_string());
+            meta.insert("t_min".to_string(), t_min.to_string());
             meta.insert("final_loss".to_string(), format!("{final_loss:.5}"));
             meta.insert("bound".to_string(), format!("{bound:.5}"));
             meta.insert("bound_se".to_string(), format!("{se:.5}"));
