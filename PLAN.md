@@ -13,8 +13,9 @@ read and runs on its own, and each arrives with its tests: this project
 starts with `make test` and continuous integration in its first commit,
 rather than adding them at the end (see [Design for test](#design-for-test)).
 
-Technical terms are defined in [Terms](#terms), just below; tool and product
-names are explained where they first appear.
+Every technical term has an entry in [Terms](#terms), just below: the
+definition itself, or a short one with a link to where it is defined in
+full; tool and product names are explained where they first appear.
 
 **Contents** (generated from the headings by `make toc`; don't edit by hand)
 
@@ -25,6 +26,10 @@ names are explained where they first appear.
   - [Generating](#generating)
   - [The networks](#the-networks)
   - [Steering](#steering)
+  - [Testing](#testing)
+  - [Images measured](#images-measured)
+  - [Text and its measures](#text-and-its-measures)
+  - [Latent diffusion](#latent-diffusion)
 - [The flows](#the-flows)
   - [Training](#training)
   - [Generation (inference)](#generation-inference)
@@ -90,6 +95,13 @@ names are explained where they first appear.
 <!-- /toc -->
 
 ## Terms
+
+The rule for this section: every technical term the document uses has
+an entry here. A term used across the document is defined in full here;
+one that belongs to a single stage may be defined in full there, where
+it is first needed, and its entry here gives a short definition and a
+link. Either way, a term's first use defines it or links to its
+definition.
 
 Terms already defined in tiny-llm-in-rust's PLAN.md mean the same here
 and aren't repeated: weights, tensor, gradient, loss, cross-entropy, backpropagation, automatic differentiation (the tape),
@@ -196,6 +208,15 @@ image, never a cross product.
   (and later a class label): instead of learned constants, the scale and
   shift of each layer normalization are computed from the time embedding,
   so every block behaves a little differently at each noise level.
+- **adaLN-Zero**: adaLN whose layers start at zero, so that every block
+  starts as the identity and the untrained network as a whole is stable
+  ([Stage 3, What was built](#what-was-built-1)).
+- **hyperparameter**: a setting chosen before training rather than
+  learned, such as the patch size or the learning rate ([Choosing the
+  patch size](#choosing-the-patch-size)).
+- **block seams**: visible edges along patch boundaries, strokes that
+  step or break where one patch meets the next; the classic symptom of
+  patches too large ([Choosing the patch size](#choosing-the-patch-size)).
 
 ### Steering
 
@@ -207,6 +228,124 @@ image, never a cross product.
   the condition adds: v = v_uncond + w·(v_cond − v_uncond), with a
   **guidance scale** w above 1. Larger w gives examples more clearly of
   the requested kind and less varied.
+- **label dropout**: in training, replacing each example's label with
+  "no label" at random (here with probability 0.1), so one model learns
+  both the conditional and the unconditional velocity that guidance
+  needs ([Stage 4, What it adds](#what-it-adds)).
+
+### Testing
+
+- **closed form**: an exact answer from a formula, with no network, to
+  check a trained one or a sampler against; Gaussian data has one for
+  its whole velocity field ([Design for test](#design-for-test)).
+- **permutation equivariance**: shuffling a layer's input tokens
+  shuffles its outputs the same way and changes nothing else, the
+  property that tests attention without the causal mask
+  ([Foundation](#foundation)).
+- **golden loss**: losses recorded from a fixed seed and model, which
+  every later run must reproduce, so a change that quietly alters
+  training fails a test ([Design for test](#design-for-test)).
+- **smoke test**: every command run end to end on tiny inputs, in
+  seconds, to show nothing is broken, not that results are good
+  (`tools/ci/smoke.sh`, part of `make test`).
+
+### Images measured
+
+- **the classifier**: a small network trained on MNIST (the standard set
+  of 70,000 handwritten digits, 28 × 28 pixels, stage 3's data) to name the digit
+  in an image, the instrument stages 4 and 5 measure generated digits
+  with ([Stage 4, What it adds](#what-it-adds)). Its measures, over
+  many samples: **agreement**, the fraction it names as the requested
+  digit; **confident**, the fraction it names any digit with
+  probability above 0.9 (a clear digit); **variety**, how different two
+  samples of one digit are, relative to real handwriting (1 as varied,
+  0 all identical); **overshoot**, the fraction of pixel values beyond
+  the image's range, at several margins.
+- **the guess**, x̂₁ = x_t + (1 − t)·v: where a generation would land if
+  its current velocity held for the rest of the way, the model's
+  current picture of the finished image; shown as a **preview grid**
+  ([Stage 5, What it adds](#what-it-adds-1)).
+- **commitment curve**: the fraction of generations whose guess is
+  already the digit they end as, at each t: when the model has decided
+  ([Stage 5, What it adds](#what-it-adds-1)).
+- **straightness**: the straight-line distance from noise to finished
+  image divided by the length of the path actually taken; 1 for a
+  straight path ([Stage 5, What it adds](#what-it-adds-1)).
+- **attention distance**: the average distance, in patches, from each
+  patch to those it attends to, weighted by attention; 3.61 for
+  attention spread evenly over a 7 × 7 grid, 0 for a patch attending
+  only to itself ([Stage 5, What it adds](#what-it-adds-1)).
+- **class means**: the average image of each digit over the training
+  set, the closed form the guess at t = 0 is checked against ([Stage 5,
+  How it will be tested](#how-it-will-be-tested-1)).
+
+### Text and its measures
+
+- **autoregressive**: generating one token at a time, each from the
+  tokens before it, as tiny-llm-in-rust's model does ([Compared with
+  tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)).
+- **masking**, **MASK**: text's noise. MASK is an extra token that
+  replaces a real one; at time t each token is masked with probability
+  1 − t, so t = 0 is all MASK ([How text diffusion
+  works](#how-text-diffusion-works)).
+- **masked diffusion language model**: a transformer trained to recover
+  the masked tokens, with **bidirectional** attention (every position
+  sees every other, before and after it), generating by unmasking over
+  a number of steps ([How text diffusion
+  works](#how-text-diffusion-works)).
+- **infilling**: filling a gap in a text from the context on both sides,
+  natural for a masked model and awkward for an autoregressive one
+  ([How text diffusion works](#how-text-diffusion-works)).
+- **streaming**: showing text as it is written; easy when each token is
+  final once written, hard when any position may change until the last
+  step ([Compared with tiny-llm-in-rust's
+  model](#compared-with-tiny-llm-in-rusts-model)).
+- **nat**: the unit of a loss computed with natural logarithms: a token
+  given probability p costs −ln p nats, 0 when p = 1, 8.32 when p is
+  1 in 4,096. One nat is 1.44 bits ([Stage 6, What it
+  adds](#what-it-adds-2)).
+- **perplexity**: e raised to a loss in nats, the number of tokens the
+  model is in effect choosing among; 3.23 nats is about 25 ([Stage 6,
+  What it adds](#what-it-adds-2)).
+- **diffusion bound**: the masked model's counterpart of a validation
+  loss, an upper bound on its loss in nats per token, so it can only
+  overstate it ([Stage 6, What it adds](#what-it-adds-2)).
+- **unigram level**, **the plateau**: the loss of a model that knows only
+  how common each token is and uses no context (6.03 nats on
+  TinyStories); stage 6's masked model first stayed there ([Stage 6
+  results](#stage-6-results)).
+- **the control**: the same network, data and training, but causal and
+  predicting the next token, to separate faults in the shared code from
+  properties of masked diffusion ([Stage 6 results](#stage-6-results)).
+- **RoPE** (rotary position embedding): positions given by rotating
+  each query and key by an angle that grows with its position, so
+  attention sees how far apart two tokens are, in place of a learned
+  table of positions ([Stage 6 results](#stage-6-results)).
+- **confidence order**, **random order**: which of the tokens drawn at a
+  step are kept: those the model is surest of, or positions chosen at
+  random ([Stage 6 results](#stage-6-results)).
+- **repetition rate**: the fraction of words equal to the word just
+  before them ("the the"). **distinct-2**: the fraction of different
+  two-word pairs among all of them, a measure of variety; 0.59 for real
+  stories ([Stage 6, What it adds](#what-it-adds-2)).
+- **block diffusion**: blocks of text generated left to right, with
+  diffusion inside each block, so finished blocks can be streamed and
+  cached ([Inference
+  compared](#inference-compared-and-why-a-pretrained-model-cant-simply-switch)).
+
+### Latent diffusion
+
+- **latent**, **autoencoder**, **VAE** (variational autoencoder): a
+  latent is a compressed copy of an image, made by an autoencoder, a
+  network trained to squeeze an image down and expand it back; large
+  image models diffuse latents, not pixels, and a VAE is the kind of
+  autoencoder Stable Diffusion uses ([Why latent models need their
+  autoencoder](#why-latent-models-need-their-autoencoder)).
+- **convolution**, **group normalization**, **upsampling**: the
+  autoencoder's layers, which this project hasn't built: a small learned
+  filter slid across the image; normalization over groups of channels;
+  doubling the image's width and height ([What supporting latent
+  diffusion would take](#what-supporting-latent-diffusion-would-take)).
 
 ## The flows
 
@@ -2141,12 +2280,22 @@ compared with tiny-llm-in-rust's on equal terms.
   only (cross-entropy, defined in tiny-llm-in-rust).
 - **A loss that compares with tiny-llm-in-rust's.** An autoregressive
   model's validation loss is the average, over held-out tokens, of
-  −log p(token | the tokens before it): the information per token, in
-  nats (the unit of log base e). A masked diffusion model has no single
-  order to factor a text in, but its training gives an upper bound on
-  the same quantity (Sahoo et al. 2024): with this schedule, the
-  average over t of the masked positions' cross-entropy summed, divided
-  by 1 − t, per token. The **diffusion bound** is estimated on the held-
+  −ln p(token | the tokens before it), where p is the probability the
+  model gave the token that actually came next, and ln is the natural
+  logarithm (base e ≈ 2.718).
+
+  Such a loss is measured in **nats** (natural units), the unit a
+  natural logarithm gives: a token the model was sure of (p = 1) costs
+  0 nats, one it gave even odds (p = ½) costs ln 2 = 0.69 nats, and one
+  it gave a 1-in-4,096 chance, as a model knowing nothing would, costs
+  ln 4,096 = 8.32 nats. The less likely the model thought the actual
+  token, the more it costs, without limit. With base-2 logarithms the
+  same quantity would be in bits; one nat is 1.44 bits.
+
+  A masked diffusion model has no single order to factor a text in, but
+  its training gives an upper bound on the same quantity (Sahoo et al.
+  2024): with this schedule, the average over t of the masked
+  positions' cross-entropy summed, divided by 1 − t, per token. The **diffusion bound** is estimated on the held-
   out tokens by drawing many values of t. It is a bound, not an exact
   loss, so it can only overstate the diffusion model's loss.
 
