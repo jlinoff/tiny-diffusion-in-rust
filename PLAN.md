@@ -87,7 +87,10 @@ full; tool and product names are explained where they first appear.
 - [Stage 7: a real model (planned)](#stage-7-a-real-model-planned)
   - [Where it fits](#where-it-fits-6)
   - [The models, and the terms of their use](#the-models-and-the-terms-of-their-use)
-  - [The plan](#the-plan)
+  - [How DiT-XL/2 differs from this project's DiT](#how-dit-xl2-differs-from-this-projects-dit)
+  - [What it adds](#what-it-adds-3)
+  - [How it will be tested](#how-it-will-be-tested-3)
+  - [Predictions](#predictions-5)
 - [How far could this go?](#how-far-could-this-go)
   - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
@@ -345,6 +348,12 @@ image, never a cross product.
   image models diffuse latents, not pixels, and a VAE is the kind of
   autoencoder Stable Diffusion uses ([Why latent models need their
   autoencoder](#why-latent-models-need-their-autoencoder)).
+- **learned variance**: an extra output of DiT-XL/2, how much noise
+  DDPM's own sampler should add back at each step; DDIM doesn't use it
+  ([How DiT-XL/2 differs](#how-dit-xl2-differs-from-this-projects-dit)).
+- **im2col**: computing a convolution as one matrix product, each
+  position's neighbourhood laid out as a row ([How DiT-XL/2
+  differs](#how-dit-xl2-differs-from-this-projects-dit)).
 - **convolution**, **group normalization**, **upsampling**: the
   autoencoder's layers, which this project hasn't built: a small learned
   filter slid across the image; normalization over groups of channels;
@@ -443,7 +452,7 @@ the example changes at every sampling step.
    language model on TinyStories (tiny-llm-in-rust's corpus of short,
    simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size.
-7. **A real model** (planned, not started: see [Stage 7](#stage-7-a-real-model-planned)):
+7. **A real model** (planned, not started; its plan and predictions are written: see [Stage 7](#stage-7-a-real-model-planned)):
    generating images with DiT-XL/2, the DiT paper's own trained model,
    through this project's code, as tiny-llm-in-rust ran SmolLM (an
    open-weight language model of 1.7 billion parameters). Its
@@ -3055,8 +3064,9 @@ dialogue) but not the subject.
 
 ## Stage 7: a real model (planned)
 
-**Not started.** This section records the plan and, before any code,
-the terms under which the models it uses may be used.
+**Not started.** This section records, before any code, the terms
+under which the models it uses may be used, the plan, and the
+predictions.
 
 ### Where it fits
 
@@ -3117,16 +3127,151 @@ use is non-commercial should read the licence itself
 ([creativecommons.org/licenses/by-nc/4.0](https://creativecommons.org/licenses/by-nc/4.0/))
 or ask someone qualified.
 
-### The plan
+### How DiT-XL/2 differs from this project's DiT
 
-Generation only, no training, as level 1 describes: the DiT-XL/2
-forward pass in this project's DiT (its sizes, its time features, its
-learned variance, DDPM's noise target), DDIM sampling with guidance
-from stage 2 and stage 4, and the decoder, the project's first
-convolutional network. Checked as tiny-llm-in-rust checked SmolLM:
-reference outputs from the official Python code, compared number for
-number, before any image is looked at. Its own detailed plan and
-predictions will be written when the stage starts.
+The same design at 365 times the size, with four differences that
+matter for the code:
+
+| | This project's DiT (stage 4) | DiT-XL/2 |
+|---|---|---|
+| Input | the image: 28 × 28 pixels, 1 channel | a latent: 32 × 32 values, 4 channels, standing for a 256 × 256 photograph |
+| Patches, tokens | 7 × 7 or 4 × 4 pixels; 16 or 49 tokens | 2 × 2 latent values; 256 tokens |
+| Width, blocks, heads | 128, 6, 4 | 1,152, 28, 16 (72 values per head) |
+| Positions | learned | fixed: sines and cosines of each patch's row and column, computed, not stored |
+| Labels | 10 digits and "no label" | 1,000 ImageNet classes and "no label" (index 1,000) |
+| Trained to predict | the velocity (flow matching) | the noise ε (DDPM's objective), plus a **learned variance** for each value |
+| Parameters | 1.8 million | 675 million |
+
+Generation runs the same loop as stage 4 with DDIM in place of Euler
+steps: from noise, at each of the chosen steps the model predicts ε
+twice (with the class and with "no label"), guidance combines the two,
+and DDIM steps to the next noise level. DDIM uses only ε, so the
+learned variance, which DDPM's own 1,000-step sampler would use, is read
+and set aside. The finished latent is divided by 0.18215, the scale the
+autoencoder's latents were normalized by in training, and decoded.
+
+Guidance is applied to all four channels of ε, the standard form and
+stage 4's. The DiT repository's own sampler, by default, applies it to
+only three, "for exact reproducibility" of the paper's numbers; the
+reference outputs are made in the standard form, so the comparison is
+like for like.
+
+The decoder is the project's first convolutional network: from the
+32 × 32 × 4 latent, a convolution to 512 channels, a middle of two
+residual blocks and one attention layer, then four stages of three
+residual blocks each, the width falling 512, 512, 256, 128 while each
+upsampling doubles the image, to 256 × 256 × 3. Each residual block is
+group normalization, SiLU and a 3 × 3 convolution, twice, with the
+input added back. A convolution is computed as a matrix product by
+**im2col**: each position's 3 × 3 neighbourhood, across all input
+channels, laid out as one row, so the existing BLAS product does the
+work. Forward passes only: nothing in stage 7 trains, so no gradients
+are needed.
+
+### What it adds
+
+- **A converter**, `tools/stage7/convert.py`, run once: it reads the
+  DiT's file, written by PyTorch (the Python machine-learning library it
+  was trained with), using PyTorch's safe loader (`weights_only=True`,
+  which refuses anything in the file but tensors, so the file can't run
+  code), checks it, and writes it as safetensors in f32 to `models/`.
+  The diffusers format stores the time and class embedding inside every
+  one of the 28 blocks; the converter checks that the 28 copies are
+  identical and keeps one. Python with PyTorch is needed for this step
+  and the reference outputs only (Decision 9); generating needs neither.
+- **The download**, `make dit-download`, which fetches the two models
+  from their own sources and converts the DiT. It prints the licence
+  terms of [The models, and the terms of their
+  use](#the-models-and-the-terms-of-their-use) and stops unless run as
+  `make dit-download DIT_LICENSE=accept`, so no one downloads the model
+  without being shown its terms.
+- `ditxl.rs`: DiT-XL/2's forward pass on this project's matrices: the
+  patch embedding, the fixed sine-cosine positions, the time and class
+  embedding, 28 blocks with adaLN-Zero, the final layer; ε and the
+  variance out.
+- `vae.rs`: the decoder: convolution by im2col, group normalization,
+  nearest-neighbour upsampling, the residual blocks and the attention
+  layer.
+- `dit-sample`: a grid of photographs, a row per class, a column per
+  starting noise, with `--classes`, `--guidance` and `--steps`, by
+  class number or by name (the 1,000 ImageNet class names, kept in
+  `tools/stage7/imagenet_classes.txt`). The credit to the model's
+  authors and the licence is printed with every grid.
+- `dit-inside`: stage 5's preview grid at full scale: the model's guess
+  of the finished photograph at each step, decoded.
+
+### How it will be tested
+
+Tests that run everywhere, continuous integration included, with no
+download:
+
+- **convolution by im2col** against a direct sum written out loop by
+  loop, at several sizes, strides and paddings;
+- **group normalization**: every group of each example has mean 0 and
+  variance 1 before the scale and shift, worked on a small case by hand;
+- **upsampling**: each value copied to a 2 × 2 square, exactly;
+- **the sine-cosine positions** against their closed form;
+- **tiny models with random weights**: the converter's other job is to
+  build a DiT and a decoder in diffusers at a tiny size (a few thousand
+  weights each, random, made here, so free of any licence), run them on
+  fixed inputs, and save weights, inputs and outputs as test fixtures of
+  a few hundred kilobytes. The Rust code must reproduce those outputs.
+  That checks every layer and every naming detail of the real files'
+  layout without the real weights.
+
+Checks that need the downloaded models, run by `make dit-check`, as
+tiny-llm-in-rust's `make llama-check` checked SmolLM:
+
+- **the real DiT-XL/2 and decoder against diffusers**: for a fixed
+  latent, time and class, the outputs of the patch embedding, the first
+  block, the last block, ε, and the decoded image, compared number for
+  number with the official Python code's.
+- **the converter**: the 28 copies of the conditioning are identical, and
+  the parameter count matches the paper's 675 million.
+
+### Predictions
+
+Written before any code, each with its mechanism and its check:
+
+1. **The real files**: the PyTorch file holds about 750 million values,
+   not 675 million: the 675 million of the paper plus 27 extra copies of
+   the time and class embedding, about 2.8 million values each
+   (256 × 1,152 + 1,152 × 1,152 for the time network, 1,001 × 1,152 for
+   the class table, with biases). Check: the converter's counts.
+2. **Agreement with the official code**: ε within a relative error of
+   10⁻⁴ of diffusers' in f32, and the decoded image within 10⁻³ on the
+   −1 to 1 scale. Mechanism: the same arithmetic in a different order;
+   f32 rounding, about 10⁻⁷ per operation, grows over 28 blocks but not
+   to 10⁻⁴. A larger difference means a real mistake, not rounding.
+3. **Speed**: one guided pass for a grid of 8 photographs (16 rows:
+   each class and "no label") takes 8 to 15 seconds on the M4: 16 ×
+   119 billion operations (the paper's figure per pass) at the 130 to
+   240 billion a second tiny-llm-in-rust measured. So 50 steps take 7
+   to 12 minutes per grid, and the decoder adds 2 to 6 seconds per
+   photograph (about 0.6 trillion operations each, mostly the 3 × 3
+   convolutions at 128 × 128 and 256 × 256).
+4. **Photographs of the class asked for**: at guidance 4 and 50 DDIM
+   steps, for the eight classes of the DiT paper's own sample grid
+   (golden retriever, Arctic fox, otter, red panda, geyser, macaw,
+   valley, balloon), at least 7 of every 8 photographs are recognizably
+   their class. Check: by eye (there is no ImageNet classifier here), a
+   grid of 8 noises by 8 classes, judged before the figures go in.
+5. **Stage 4 at full scale**: at guidance 1, at most 5 of every 8 are
+   recognizable, and they are more varied; guidance 4 gives clearer,
+   more saturated, more alike photographs. Mechanism: stage 4's, guidance
+   trades variety for clarity, now on 1,000 classes of photographs.
+   Check: the same grid at w = 1 and w = 4, the same noises.
+6. **Fewer steps**: 25 DDIM steps look the same as 50 by eye; 10 are
+   still recognizable but softer; 4 fail, smooth blobs of the right
+   colours. Mechanism: stage 3 and stage 5 found the paths nearly
+   straight, so few steps nearly suffice, but not the fewest; DDIM's
+   paths for a noise-predicting model curve more near the end. Check:
+   one grid per step count, the same noises.
+7. **The guess settles early, at full scale**: the decoded guess at 30%
+   of the steps already shows the finished photograph's layout (where
+   the subject is, the main colours) in at least 6 of 8 cases, as stage
+   5 found the digit decided by t ≈ 0.2 to 0.3. Check: `dit-inside`'s
+   preview grid, by eye.
 
 ## How far could this go?
 
@@ -3360,6 +3505,21 @@ here as they come up, and stay open until settled.
    network, same budget, masked against next-token, so the gap between
    them is the masked objective's alone. tiny-llm-in-rust's own model
    stays in the table, for reference. `make text` passes `--rope`.
+
+9. **Stage 7 uses Python, with PyTorch, for setup only.** Proposed.
+   Everything else in this project's tools uses Python's standard
+   library alone, and generation stays in Rust. But two steps can't be
+   done otherwise without a much larger, riskier piece of work:
+   - *the DiT weights are only a PyTorch pickle*: reading one in Rust
+     would mean writing a pickle reader, and a pickle can carry code;
+     PyTorch's safe loader reads the tensors and nothing else;
+   - *the reference outputs must come from the official code*: the
+     point of the check is that someone else's implementation agrees.
+
+   So `tools/stage7/` has its own requirements (PyTorch, diffusers,
+   safetensors, huggingface_hub), installed into a virtual environment
+   under `models/` and never needed by `make test`: the test fixtures it
+   writes are committed, so continuous integration runs without it.
 
 ## Where things live
 
