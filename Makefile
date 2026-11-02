@@ -184,6 +184,49 @@ inside: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Stage 5: look inside the
 			--preview $(OUT)/inside-$$m-preview.png --attention $(OUT)/inside-$$m-attention.png || exit 1; \
 	done
 
+# Stage 6, text (PLAN.md): a masked diffusion language model on
+# tiny-llm-in-rust's tokenizer and corpus, read from its out/ folder
+# (LLM_OUT), and compared with its trained model there (model.safetensors).
+# TEXT_ARGS passes options to train-text. TEXT_AR_SAMPLES is a file of
+# tiny-llm-in-rust's own stories (make llm-stories), measured beside this
+# model's when it exists.
+LLM_OUT         ?= ../tiny-llm-in-rust/out
+TEXT_ARGS       ?=
+TEXT_AR_SAMPLES ?= $(OUT)/llm-stories.txt
+
+$(OUT)/text.safetensors: | $(DIFFUSION) $(OUT)
+	@for f in corpus.ids tok.bpe; do \
+		test -f $(LLM_OUT)/$$f || { echo "no $(LLM_OUT)/$$f: run make encode in tiny-llm-in-rust, or set LLM_OUT"; exit 1; }; \
+	done
+	$(call hdr,train-text)
+	$(DIFFUSION) train-text --ids $(LLM_OUT)/corpus.ids \
+		$(if $(wildcard $(LLM_OUT)/model.safetensors),--compare $(LLM_OUT)/model.safetensors) $(TEXT_ARGS) -o $@
+
+.PHONY: text text-sample
+text: $(OUT)/text.safetensors ## Stage 6: train the masked diffusion language model on tiny-llm-in-rust's corpus: minutes.
+
+text-sample: $(OUT)/text.safetensors | $(DIFFUSION) ## Stage 6: stories at 16, 64 and 256 steps, timed; an infilled story; the text measures.
+	$(call hdr,sample-text)
+	$(DIFFUSION) sample-text --model $< --tokenizer $(LLM_OUT)/tok.bpe --ids $(LLM_OUT)/corpus.ids --out-prefix $(OUT)/text
+	$(call hdr,text measures)
+	python3 tools/text_stats.py $(OUT)/text-real.txt \
+		$(if $(wildcard $(TEXT_AR_SAMPLES)),--tiny-llm $(TEXT_AR_SAMPLES)) \
+		$(OUT)/text-s16.txt $(OUT)/text-s64.txt $(OUT)/text-s256.txt
+
+# tiny-llm-in-rust's own stories, 8 of up to 256 tokens from 'Once upon a
+# time', by its own program, for make text-sample to measure alongside.
+LLM_DIR := $(LLM_OUT)/..
+.PHONY: llm-stories
+llm-stories: | $(OUT) ## Stage 6: 8 stories from tiny-llm-in-rust's trained model, into TEXT_AR_SAMPLES.
+	@test -x $(LLM_DIR)/transformer/target/release/transformer || { echo "build tiny-llm-in-rust first (make build there)"; exit 1; }
+	$(call hdr,stories from tiny-llm-in-rust)
+	for s in 1 2 3 4 5 6 7 8; do \
+		$(LLM_DIR)/transformer/target/release/transformer generate --model $(LLM_OUT)/model.safetensors \
+			--tokenizer $(LLM_OUT)/tok.bpe --config $(LLM_DIR)/config.toml --prompt 'Once upon a time' \
+			--seed $$s --max-tokens 256 || exit 1; \
+	done > $(TEXT_AR_SAMPLES)
+	@echo "wrote $(TEXT_AR_SAMPLES)"
+
 .PHONY: classifier measure-stage3
 classifier: $(OUT)/classifier.safetensors ## Train the digit classifier, stage 4's measuring instrument: a minute or two.
 
@@ -233,6 +276,7 @@ lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links, acronyms de
 		while read v; do case " $(HELP_VARS) " in *" $$v "*) ;; *) echo $$v;; esac; done); \
 	test -z "$$missing" || { echo "make help doesn't list: $$missing (add to HELP_VARS)"; exit 1; }; \
 	echo "make help lists every variable"
+	@$(MAKE) -s help > /dev/null && echo "make help runs"
 	@for f in $$(grep -ohE 'docs/[A-Za-z0-9._-]+' PLAN.md README.md | sort -u); do \
 		test -f $$f || { echo "PLAN.md or README.md shows $$f, which doesn't exist"; exit 1; }; \
 	done; echo "every figure the documents show exists"
@@ -250,7 +294,8 @@ clean: ## Remove generated files (keeps data/).
 # value now. A variable meant to be set from the command line gets a line
 # here and a HELP_ description.
 HELP_VARS := OUT CARGO_FEATURES TRAIN2D_ARGS IMG_ARGS SHAPES_ARGS PEEK_MODEL \
-	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS URL_mnist URL_fashion
+	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS LLM_OUT TEXT_ARGS \
+	TEXT_AR_SAMPLES URL_mnist URL_fashion
 HELP_OUT             := where models, plots and images are written
 HELP_CARGO_FEATURES  := blas: Apple Accelerate for large matrix products (default on macOS); empty: plain Rust
 HELP_TRAIN2D_ARGS    := options for train2d, the stage 2 models (diffusion train2d --help)
@@ -261,8 +306,14 @@ HELP_CLASSIFIER_ARGS := options for the classifier (diffusion classifier --help)
 HELP_GUIDE_MODEL     := the labelled model make guidance measures
 HELP_GUIDANCE        := the guidance scales make guidance measures and draws
 HELP_INSIDE_MODELS   := the models make inside looks into (names in out/, without .safetensors)
+HELP_LLM_OUT         := tiny-llm-in-rust's out/ folder: its tok.bpe, corpus.ids and model.safetensors
+HELP_TEXT_ARGS       := options for train-text, the masked diffusion language model (diffusion train-text --help)
+HELP_TEXT_AR_SAMPLES := tiny-llm-in-rust's stories (make llm-stories writes them), measured beside this model's by make text-sample
 HELP_URL_mnist       := where MNIST is downloaded from
 HELP_URL_fashion     := where Fashion-MNIST is downloaded from
+
+# A value inside single quotes, with any single quote in it escaped.
+q = $(subst ','\'',$(1))
 
 .PHONY: help
 help: ## This help message.
@@ -270,4 +321,4 @@ help: ## This help message.
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | \
 		awk -F':.*## ' '{printf("   %-15s %s\n", $$1, $$2)}' | sort
 	@printf "\n   Variables, set on the command line (make digits IMG_ARGS='--steps 5000'):\n"
-	@$(foreach v,$(HELP_VARS),printf "   %-15s %s\n   %-15s now: %s\n" '$(v)' '$(HELP_$(v))' '' '$(or $($(v)),(empty))';)
+	@$(foreach v,$(HELP_VARS),printf "   %-15s %s\n   %-15s now: %s\n" '$(v)' '$(call q,$(HELP_$(v)))' '' '$(call q,$(or $($(v)),(empty)))';)

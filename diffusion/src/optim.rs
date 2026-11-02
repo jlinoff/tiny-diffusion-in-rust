@@ -56,6 +56,52 @@ impl Adam {
     }
 }
 
+impl Adam {
+    /// AdamW, as tiny-llm-in-rust trains: the Adam step, then each weight
+    /// with `decay[i]` set shrunk by lr × weight_decay (decoupled weight
+    /// decay, applied to matrices and embeddings, not to biases or layer
+    /// norms).
+    pub fn update_decayed(
+        &mut self,
+        params: &mut [Mat<f32>],
+        grads: &[Mat<f32>],
+        lr: f32,
+        decay: &[bool],
+        weight_decay: f32,
+    ) {
+        assert_eq!(params.len(), decay.len());
+        for (p, &d) in params.iter_mut().zip(decay) {
+            if d {
+                for x in p.data.iter_mut() {
+                    *x -= lr * weight_decay * *x;
+                }
+            }
+        }
+        self.update(params, grads, lr);
+    }
+}
+
+/// Scale the gradients down so their combined length (the square root of
+/// the sum of every squared value) is at most `max`; returns the length
+/// before clipping. tiny-llm-in-rust clips at 1.0.
+pub fn clip_gradients(grads: &mut [Mat<f32>], max: f32) -> f32 {
+    let norm = grads
+        .iter()
+        .flat_map(|g| g.data.iter())
+        .map(|&x| (x as f64) * (x as f64))
+        .sum::<f64>()
+        .sqrt() as f32;
+    if norm > max {
+        let s = max / norm;
+        for g in grads.iter_mut() {
+            for x in g.data.iter_mut() {
+                *x *= s;
+            }
+        }
+    }
+    norm
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +117,24 @@ mod tests {
         for (a, b) in p[0].data.iter().zip(want) {
             assert!((a - b).abs() < 1e-4, "{:?}", p[0].data);
         }
+    }
+
+    #[test]
+    fn clipping_and_decay() {
+        let mut g = vec![Mat::from_vec(1, 2, vec![3.0, 4.0])];
+        assert_eq!(clip_gradients(&mut g, 1.0), 5.0);
+        assert!((g[0].data[0] - 0.6).abs() < 1e-6 && (g[0].data[1] - 0.8).abs() < 1e-6);
+        let mut small = vec![Mat::from_vec(1, 1, vec![0.5])];
+        clip_gradients(&mut small, 1.0);
+        assert_eq!(small[0].data[0], 0.5);
+        // With a zero gradient only the decay moves a weight: by lr × wd × w.
+        let mut p = vec![
+            Mat::from_vec(1, 1, vec![2.0]),
+            Mat::from_vec(1, 1, vec![2.0]),
+        ];
+        let z = vec![Mat::zeros(1, 1), Mat::zeros(1, 1)];
+        Adam::new(&p).update_decayed(&mut p, &z, 0.1, &[true, false], 0.5);
+        assert!((p[0].data[0] - 1.9).abs() < 1e-6 && p[1].data[0] == 2.0);
     }
 
     /// It minimizes a quadratic: (x − 3)², from x = 0.

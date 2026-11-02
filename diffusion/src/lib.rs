@@ -27,5 +27,7 @@ pub mod style;
 pub mod svg;
 pub mod tape;
 pub mod tensor;
+pub mod text;
+pub mod textmodel;
 pub mod train2d;
 pub mod trainimg;

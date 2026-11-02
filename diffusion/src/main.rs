@@ -13,6 +13,10 @@
 //! noise decides how a digit is written.
 //!
 //! Stage 5, looking inside: `inside` runs the probes of PLAN.md's stage 5.
+//!
+//! Stage 6, text: `train-text` trains the masked diffusion language model on
+//! tiny-llm-in-rust's corpus and reports its diffusion bound; `sample-text`
+//! generates, infills and times it.
 
 use clap::{Parser, Subcommand};
 use mini_diffusion::classify::{
@@ -299,6 +303,87 @@ enum Command {
         /// row per block, one column per moment.
         #[arg(long)]
         attention: Option<PathBuf>,
+    },
+    /// Train the masked diffusion language model (stage 6) on a token-ID file
+    /// written by tiny-llm-in-rust's tokenizer, and measure its diffusion
+    /// bound on the held-out tokens.
+    TrainText {
+        /// The token IDs (tiny-llm-in-rust's out/corpus.ids).
+        #[arg(long)]
+        ids: PathBuf,
+        #[arg(long, default_value_t = 128)]
+        width: usize,
+        #[arg(long, default_value_t = 4)]
+        blocks: usize,
+        #[arg(long, default_value_t = 4)]
+        heads: usize,
+        #[arg(long, default_value_t = 256)]
+        context: usize,
+        #[arg(long, default_value_t = 512)]
+        ffn: usize,
+        #[arg(long, default_value_t = 2000)]
+        steps: u64,
+        #[arg(long, default_value_t = 8)]
+        batch: usize,
+        #[arg(long, default_value_t = 2e-3)]
+        lr: f32,
+        #[arg(long, default_value_t = 100)]
+        warmup: u64,
+        #[arg(long, default_value_t = 0.1)]
+        min_lr_fraction: f32,
+        #[arg(long, default_value_t = 0.1)]
+        weight_decay: f32,
+        #[arg(long, default_value_t = 1.0)]
+        grad_clip: f32,
+        #[arg(long, default_value_t = 0.95)]
+        beta2: f32,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// The share of the tokens held out, at the end, as tiny-llm-in-rust.
+        #[arg(long, default_value_t = 0.05)]
+        valid_fraction: f64,
+        /// Held-out windows the bound is measured on, and values of t each.
+        #[arg(long, default_value_t = 64)]
+        valid_windows: usize,
+        #[arg(long, default_value_t = 8)]
+        draws: usize,
+        #[arg(long, default_value_t = 100)]
+        log_every: u64,
+        /// tiny-llm-in-rust's trained model, to print its validation loss
+        /// beside the diffusion bound (out/model.safetensors there).
+        #[arg(long)]
+        compare: Option<PathBuf>,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Generate stories with the masked diffusion model at several step
+    /// counts, infill a held-out story, and time it (stage 6).
+    SampleText {
+        #[arg(long)]
+        model: PathBuf,
+        /// tiny-llm-in-rust's out/tok.bpe, for decoding.
+        #[arg(long)]
+        tokenizer: PathBuf,
+        /// The same token IDs the model was trained on.
+        #[arg(long)]
+        ids: PathBuf,
+        #[arg(long, value_delimiter = ',', default_value = "16,64,256")]
+        steps: Vec<usize>,
+        /// Stories at each step count.
+        #[arg(long, default_value_t = 8)]
+        n: usize,
+        #[arg(long, default_value_t = 0.8)]
+        temperature: f32,
+        #[arg(long, default_value_t = 40)]
+        top_k: usize,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(long, default_value_t = 0.05)]
+        valid_fraction: f64,
+        /// Files written: <prefix>-s16.txt and so on, <prefix>-real.txt,
+        /// <prefix>-infill.txt.
+        #[arg(long, default_value = "out/text")]
+        out_prefix: String,
     },
     /// For a model with labels: does the starting noise decide the style?
     /// Draws every class from the same noises and correlates slant,
@@ -915,6 +1000,154 @@ fn run(command: Command) -> Result<(), String> {
             let train = labelled(&data, &data_dir, shape.height, shape.channels, false)?;
             inside_probes(&dit, &clf, &train, n, steps, seed, preview, attention)
         }
+        Command::TrainText {
+            ids,
+            width,
+            blocks,
+            heads,
+            context,
+            ffn,
+            steps,
+            batch,
+            lr,
+            warmup,
+            min_lr_fraction,
+            weight_decay,
+            grad_clip,
+            beta2,
+            seed,
+            valid_fraction,
+            valid_windows,
+            draws,
+            log_every,
+            compare,
+            output,
+        } => {
+            use mini_diffusion::text::{split, valid_windows as vw, Corpus};
+            use mini_diffusion::textmodel::{
+                diffusion_bound, train, TextConfig, TextModel, TextTraining,
+            };
+            check_writable(&output)?;
+            let corpus = Corpus::load(&ids)?;
+            let (tr, va) = split(&corpus.ids, valid_fraction);
+            if tr.len() <= context {
+                return Err(format!(
+                    "{} training tokens: too few for windows of {context}",
+                    tr.len()
+                ));
+            }
+            let cfg = TextConfig {
+                vocab: corpus.vocab_size,
+                width,
+                blocks,
+                heads,
+                context,
+                ffn,
+            };
+            let tc = TextTraining {
+                steps,
+                batch,
+                learning_rate: lr,
+                warmup,
+                min_lr_fraction,
+                weight_decay,
+                grad_clip,
+                beta2,
+                seed,
+            };
+            println!(
+                "Training a masked diffusion language model ({} parameters: width {width}, {blocks} blocks, {heads} heads, context {context}, V = {} + MASK) on {}: {} training tokens, {} held out; {steps} steps of {batch} windows",
+                cfg.parameters(),
+                cfg.vocab,
+                ids.display(),
+                tr.len(),
+                va.len()
+            );
+            println!("   step    loss        lr   tokens/s   remaining");
+            let mut model = TextModel::new(cfg, seed);
+            let (mut sum, mut count, mut tick) = (0.0f64, 0u64, Instant::now());
+            let start = Instant::now();
+            let losses = train(&mut model, tr, &tc, |step, loss| {
+                sum += loss as f64;
+                count += 1;
+                if step % log_every == 0 || step == steps {
+                    let secs = tick.elapsed().as_secs_f64();
+                    println!(
+                        "  {step:>5}   {:.4}  {:.2e}  {:9.0}   {:>9}",
+                        sum / count as f64,
+                        tc.lr(step),
+                        (count as f64 * (batch * context) as f64) / secs,
+                        duration(secs / count as f64 * (steps - step) as f64)
+                    );
+                    (sum, count, tick) = (0.0, 0, Instant::now());
+                }
+            });
+            println!("Trained in {}", duration(start.elapsed().as_secs_f64()));
+            let windows = vw(va, context, valid_windows);
+            let (bound, se) = if windows.is_empty() {
+                println!("(no held-out window of {context} tokens: no bound measured)");
+                (f64::NAN, f64::NAN)
+            } else {
+                let t0 = Instant::now();
+                let (b, se) = diffusion_bound(&model, &windows, draws, seed);
+                println!(
+                    "Diffusion bound on {} held-out windows, {draws} values of t each: {b:.4} ± {se:.4} nats per token ({})",
+                    windows.len(),
+                    duration(t0.elapsed().as_secs_f64())
+                );
+                (b, se)
+            };
+            if let Some(p) = compare {
+                let f = safetensors::read(&p)?;
+                match f.metadata.get("valid_loss") {
+                    Some(v) => {
+                        let v: f64 = v.parse().map_err(|_| "bad valid_loss".to_string())?;
+                        let step = f.metadata.get("step").map(String::as_str).unwrap_or("?");
+                        println!(
+                            "tiny-llm-in-rust's validation loss ({}, step {step}): {v:.4} nats per token; the diffusion bound is {:+.1}% of it",
+                            p.display(),
+                            100.0 * (bound / v - 1.0)
+                        );
+                    }
+                    None => println!("{}: no valid_loss in its metadata", p.display()),
+                }
+            }
+            let tail = &losses[losses.len().saturating_sub(100)..];
+            let final_loss = tail.iter().map(|&l| l as f64).sum::<f64>() / tail.len() as f64;
+            let mut meta = BTreeMap::new();
+            meta.insert("data".to_string(), ids.display().to_string());
+            meta.insert("steps".to_string(), steps.to_string());
+            meta.insert("seed".to_string(), seed.to_string());
+            meta.insert("final_loss".to_string(), format!("{final_loss:.5}"));
+            meta.insert("bound".to_string(), format!("{bound:.5}"));
+            meta.insert("bound_se".to_string(), format!("{se:.5}"));
+            let f = model.to_file(meta);
+            safetensors::write(&output, &f.tensors, &f.metadata)?;
+            println!("Wrote {}", output.display());
+            Ok(())
+        }
+        Command::SampleText {
+            model,
+            tokenizer,
+            ids,
+            steps,
+            n,
+            temperature,
+            top_k,
+            seed,
+            valid_fraction,
+            out_prefix,
+        } => sample_text(
+            &model,
+            &tokenizer,
+            &ids,
+            &steps,
+            n,
+            mini_diffusion::textmodel::Sampling { temperature, top_k },
+            seed,
+            valid_fraction,
+            &out_prefix,
+        ),
         Command::Style {
             model,
             n,
@@ -928,6 +1161,147 @@ fn run(command: Command) -> Result<(), String> {
             style_table(&dit, n, steps, seed, guidance)
         }
     }
+}
+
+/// Stage 6's sampling: stories at each step count (timed one at a time,
+/// as tiny-llm-in-rust times its generation), the order of settling, a
+/// held-out story's middle infilled, and text files for tools/text_stats.py.
+#[allow(clippy::too_many_arguments)]
+fn sample_text(
+    model: &Path,
+    tokenizer: &Path,
+    ids: &Path,
+    steps: &[usize],
+    n: usize,
+    s: mini_diffusion::textmodel::Sampling,
+    seed: u64,
+    valid_fraction: f64,
+    prefix: &str,
+) -> Result<(), String> {
+    use mini_diffusion::text::{split, Corpus, Vocab};
+    use mini_diffusion::textmodel::{generate, TextModel};
+    let f = safetensors::read(model)?;
+    let m = TextModel::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
+    let vocab = Vocab::load(tokenizer)?;
+    let corpus = Corpus::load(ids)?;
+    if vocab.size() != m.cfg.vocab || corpus.vocab_size != m.cfg.vocab {
+        return Err(format!(
+            "the model has V = {}, the tokenizer {} and the IDs {}",
+            m.cfg.vocab,
+            vocab.size(),
+            corpus.vocab_size
+        ));
+    }
+    let len = m.cfg.context;
+    println!(
+        "{}: trained for {} steps, diffusion bound {} nats per token",
+        model.display(),
+        f.metadata.get("steps").map(String::as_str).unwrap_or("?"),
+        f.metadata.get("bound").map(String::as_str).unwrap_or("?")
+    );
+    // Each token's frequency rank in the training tokens (0 = commonest).
+    let (train, valid) = split(&corpus.ids, valid_fraction);
+    let mut counts = vec![0usize; m.cfg.vocab];
+    for &t in train {
+        counts[t as usize] += 1;
+    }
+    let mut order: Vec<usize> = (0..m.cfg.vocab).collect();
+    order.sort_by(|&a, &b| counts[b].cmp(&counts[a]));
+    let mut rank = vec![0usize; m.cfg.vocab];
+    for (r, &t) in order.iter().enumerate() {
+        rank[t] = r;
+    }
+    let top20: usize = order.iter().take(20).map(|&t| counts[t]).sum();
+    println!(
+        "The 20 commonest tokens are {:.1}% of the training tokens",
+        100.0 * top20 as f64 / train.len().max(1) as f64
+    );
+    let median = |v: &mut Vec<usize>| {
+        v.sort();
+        if v.is_empty() {
+            f64::NAN
+        } else {
+            v[v.len() / 2] as f64
+        }
+    };
+    println!(
+        "\n   steps   tokens/s   median rank of the tokens settled in the first tenth, last tenth"
+    );
+    let mut rng = Rng::new(seed);
+    for &st in steps {
+        let mut text = String::new();
+        let (mut early, mut late) = (Vec::new(), Vec::new());
+        let t0 = Instant::now();
+        for _ in 0..n {
+            let g = generate(&m, &vec![None; len], st, s, &mut rng);
+            for (i, at) in g.settled_at.iter().enumerate() {
+                if let Some(k) = at {
+                    if *k < st.div_ceil(10) {
+                        early.push(rank[g.tokens[i]]);
+                    } else if *k >= st - st.div_ceil(10) {
+                        late.push(rank[g.tokens[i]]);
+                    }
+                }
+            }
+            text.push_str(&vocab.decode(&g.tokens));
+            text.push_str("\n\n");
+        }
+        let secs = t0.elapsed().as_secs_f64();
+        let path = PathBuf::from(format!("{prefix}-s{st}.txt"));
+        check_writable(&path)?;
+        std::fs::write(&path, &text).map_err(|e| format!("can't write {}: {e}", path.display()))?;
+        println!(
+            "  {st:>6}   {:8.0}   {:>8.0}, {:>8.0}   ({})",
+            (n * len) as f64 / secs,
+            median(&mut early),
+            median(&mut late),
+            path.display()
+        );
+    }
+    // Real held-out text, for the measures.
+    let real: String = valid
+        .chunks_exact(len)
+        .take(64)
+        .map(|w| vocab.decode(&w.iter().map(|&t| t as usize).collect::<Vec<_>>()) + "\n\n")
+        .collect();
+    let path = PathBuf::from(format!("{prefix}-real.txt"));
+    check_writable(&path)?;
+    std::fs::write(&path, &real).map_err(|e| format!("can't write {}: {e}", path.display()))?;
+    println!("\nWrote {} (held-out text, for comparison)", path.display());
+    // Infilling: the middle third of a held-out window masked.
+    if let Some(w) = valid.chunks_exact(len).next() {
+        let st = *steps.iter().max().unwrap_or(&64);
+        let fixed: Vec<Option<usize>> = w
+            .iter()
+            .enumerate()
+            .map(|(i, &t)| {
+                if i >= len / 3 && i < 2 * len / 3 {
+                    None
+                } else {
+                    Some(t as usize)
+                }
+            })
+            .collect();
+        let g = generate(&m, &fixed, st, s, &mut rng);
+        let show = |toks: &[usize]| vocab.decode(toks);
+        let orig: Vec<usize> = w.iter().map(|&t| t as usize).collect();
+        let (a, b) = (len / 3, 2 * len / 3);
+        let out = format!(
+            "BEFORE THE GAP:\n{}\n\nTHE ORIGINAL MIDDLE:\n{}\n\nTHE MODEL'S MIDDLE ({st} steps):\n{}\n\nAFTER THE GAP:\n{}\n",
+            show(&orig[..a]),
+            show(&orig[a..b]),
+            show(&g.tokens[a..b]),
+            show(&orig[b..])
+        );
+        let path = PathBuf::from(format!("{prefix}-infill.txt"));
+        check_writable(&path)?;
+        std::fs::write(&path, &out).map_err(|e| format!("can't write {}: {e}", path.display()))?;
+        println!(
+            "Wrote {} (a held-out story's middle third, filled in)",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 /// The probes of stage 5 (PLAN.md), on n generations of `steps` Euler steps.

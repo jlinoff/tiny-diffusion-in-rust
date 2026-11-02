@@ -75,6 +75,8 @@ make measure-stage3 # the classifier's verdict on stage 3's digit models
 make digits-cond    # the DiT told which digit to draw (7×7 patches): about half an hour
 make guidance       # how the guidance scale trades clarity for variety: a table and a grid per scale
 make inside         # stage 5: look inside the trained models: their guesses, paths, guidance's push, attention
+make text           # stage 6: a masked diffusion language model on tiny-llm-in-rust's stories, beside its model
+make text-sample    # its stories at 16, 64 and 256 steps, an infilled story, and the text measures
 make test           # every check: the tests, a smoke test of every command, formatting, lint
 make help           # every target, and every variable with its value
 ```

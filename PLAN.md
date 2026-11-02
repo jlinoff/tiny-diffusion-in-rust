@@ -74,7 +74,8 @@ names are explained where they first appear.
   - [What it adds](#what-it-adds-2)
   - [How it will be tested](#how-it-will-be-tested-2)
   - [Predictions](#predictions-4)
-  - [Running it (planned)](#running-it-planned)
+  - [What was built](#what-was-built-3)
+  - [Running it](#running-it-4)
 - [Decisions](#decisions)
 - [Where things live](#where-things-live)
 - [Bibliography](#bibliography)
@@ -84,7 +85,8 @@ names are explained where they first appear.
 
 Terms already defined in tiny-llm-in-rust's PLAN.md mean the same here
 and aren't repeated: weights, tensor, gradient, loss, cross-entropy, backpropagation, automatic differentiation (the tape),
-Adam, learning rate, batch, attention, GELU (the Gaussian error linear
+Adam, AdamW (Adam with decoupled weight decay), learning rate, batch,
+attention, GELU (the Gaussian error linear
 unit, a smooth nonlinearity), transformer block, residual connection,
 layer normalization, KV cache (key–value cache), checkpoint,
 safetensors, and f32 and f64 (32- and 64-bit floating-point numbers).
@@ -2170,12 +2172,50 @@ Written before any code. Each gives its mechanism and a numeric check.
    from the corpus when built); confidence-ordered settling should drain
    them first.
 
-### Running it (planned)
+### What was built
+
+- `text.rs`: tiny-llm-in-rust's token-ID file, its held-out split (the
+  last round(5%) of the tokens) and its random windows (the same
+  starts, from the same random streams, as its training draws), and
+  decoding with its tokenizer file. Tested on tiny-llm-in-rust's own
+  fixtures (`tests/data/tiny.ids` and `tiny.bpe`, copied, V = 317).
+- `textmodel.rs`: the model (1,350,528 parameters at tiny-llm-in-rust's
+  shape, checked against its formula), masking, training with AdamW as
+  tiny-llm-in-rust trains (`optim.rs` gains decoupled weight decay and
+  gradient clipping, each tested), the diffusion bound, and generation
+  by unmasking. Tested as planned: gradients against finite
+  differences, bidirectionality, the masked share, the bound of a model
+  that gives every token probability 1/V (log V, within 3%), generation
+  settling every position exactly once and never touching a given
+  token, files round-tripping, a golden loss (its first value log 317,
+  the untrained model being nearly uniform).
+- `diffusion train-text` and `sample-text`, and `tools/text_stats.py`
+  (repetition and distinct-2; with `--tiny-llm`, it reads
+  tiny-llm-in-rust's generate output, keeping only the stories and
+  averaging the decoding speed it printed). Its tests work texts by
+  hand.
+- `make help` now runs as part of lint: a help text with an apostrophe
+  in it had broken it, unnoticed.
+
+A trial on tiny-llm-in-rust's 2,356-token fixture in this project's
+cloud workspace (a model of 28,352 parameters, context 32, 300 steps)
+ran every step end to end; its stories are letters, as expected from
+2,000 tokens of training, so it shows only that the machinery works.
+
+### Running it
+
+From this project's folder, with tiny-llm-in-rust beside it (or
+`LLM_OUT=` pointing at its `out/`):
 
 | Command | What it does |
 |---|---|
-| `make text` | trains the masked diffusion model on tiny-llm-in-rust's corpus (minutes) and reports the diffusion bound beside tiny-llm-in-rust's validation loss |
-| `make text-sample` | stories at 16, 64 and 256 steps, the order of settling, an infilled story, the speed of each, and the text measures beside real stories' and tiny-llm-in-rust's |
+| `make text` | trains the masked diffusion model on tiny-llm-in-rust's corpus, reports the diffusion bound beside tiny-llm-in-rust's validation loss (minutes) |
+| `make llm-stories` | 8 stories from tiny-llm-in-rust's trained model, by its own program, into `out/llm-stories.txt`, with its decoding speed |
+| `make text-sample` | stories at 16, 64 and 256 steps (`out/text-s16.txt` …), their speed and order of settling, an infilled story (`out/text-infill.txt`), and the text measures for real stories, tiny-llm-in-rust's and this model's |
+
+For prediction 2's check, tiny-llm-in-rust's validation loss at step
+1,000 and at 2,000 of the same run: from its training log, or
+`make -B train` there, which prints both.
 
 ## Decisions
 
