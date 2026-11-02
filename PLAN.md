@@ -2143,6 +2143,18 @@ compared with tiny-llm-in-rust's on equal terms.
   by 1 − t, per token. The **diffusion bound** is estimated on the held-
   out tokens by drawing many values of t. It is a bound, not an exact
   loss, so it can only overstate the diffusion model's loss.
+
+  A loss in nats reads most easily as e raised to it, the
+  **perplexity**: the number of tokens the model is in effect choosing
+  among, as if it had narrowed the answer to that many equally likely
+  ones. A fall of x nats divides that number by e^x; one nat, by 2.7.
+
+  | Loss, nats | e^loss: in effect choosing among | |
+  |---|---|---|
+  | 8.32 | 4,096 | knowing nothing (log V) |
+  | 6.03 | 415 | knowing only how common each token is |
+  | 4.00 | 55 | |
+  | 3.23 | 25 | tiny-llm-in-rust's model at 2,000 steps |
 - **Generation by unmasking.** From a sequence of 256 MASKs, S steps:
   at each, the model predicts every masked position, a token is drawn
   at each (with tiny-llm-in-rust's temperature 0.8 and top-k 40), and
@@ -2666,6 +2678,163 @@ model (`out/text.safetensors`, RoPE, 2,000 steps):
 11. **Early tokens are no longer all full stops.** The median rank of
    the tokens settled in the first tenth is above 0. They are still
    drawn with little context, so they stay common words: under 20.
+
+**The results, random order** (the same model and eight windows):
+
+| Text | Words | Repetition | Distinct-2 | Median rank settled first, last tenth |
+|---|---|---|---|---|
+| held-out stories | 12,684 | 0.11% | 0.590 | |
+| tiny-llm-in-rust's stories | 1,045 | 0.29% | 0.603 | |
+| confidence order, 256 steps | 505 | 26.5% | 0.113 | 0, 28 |
+| random order, 16 steps | 1,472 | 1.77% | 0.674 | 5, 65 |
+| random order, 64 steps | 1,468 | 1.43% | 0.687 | 4, 53 |
+| random order, 256 steps | 1,390 | 2.23% | 0.692 | 4, 52 |
+
+**Prediction 9 (no flood of full stops): right.** At 256 steps,
+repetition 2.23% (under 10% predicted) and distinct-2 0.692 (above 0.3
+predicted), from 26.5% and 0.113 with confidence order, and nearly three
+times the words. Most of stage 6's repetition was the sampler's.
+
+**Prediction 10 (more steps no longer hurt): wrong as worded.**
+Repetition at 256 steps, 2.23%, is above that at 16, 1.77%; 64 steps
+is lowest. The steep climb is gone (confidence order went 18.6%, 23.7%,
+26.5%), but these differences are about 25 to 30 repeated words out of
+1,400 in eight windows, too few to say whether more steps help, hurt or
+do neither.
+
+**Prediction 11 (early tokens no longer all full stops): right.** The
+tokens settled first have median rank 4 or 5 (above 0, under 20
+predicted): common words, drawn with little context, as expected.
+
+Distinct-2 is now above real stories' (0.69 against 0.59): more varied
+than real text, which can mean words strung together without the
+phrases real stories repeat. The samples show that this is what it
+means. From scratch, at 256 steps:
+
+```text
+Lily can, Tom asked that he can not not much away. Timmy and did not
+big. We have together. He want is sad.
+```
+
+Every word belongs in a TinyStories story, and so do the pieces: names,
+quotation marks, "said", "mom", "play", sentences of a few words. But
+grammar lasts two or three words at most, so pairs of words are more
+varied than in real text, not less. The infill at 256 steps is the
+same, now with no "He was very happy" loops but no full sentences
+either: "They had a big bird, and walked it in her special."
+
+The two orders fail in opposite ways, the familiar trade-off between
+greedy and sampled decoding in next-token models. Confidence order
+writes the model's safest choices: full stops from nothing, and from
+context grammatical sentences on a loop. Random order writes what the
+model believes, and with a bound of 4.91 nats per token what it
+believes is still loose. tiny-llm-in-rust's model, at 3.23, writes
+coherent stories with the same kind of sampling. So the sampler was the
+cause of the flood of full stops, but not of the incoherence: that is
+the model's, and the masked model was still learning fast when its
+2,000 steps ran out.
+
+**Next: ten times longer, with RoPE.** 20,000 steps of the RoPE model
+(about 35 minutes), and of the RoPE control for comparison. 20,000
+steps of 2,048 tokens is 41 million tokens, nine passes over the 4.57
+million training tokens, so this also asks how each objective copes
+with seeing the same text again. Predictions, written before either
+run:
+
+12. **The bound ends under 4.0.** Mechanism: at step 2,000 the loss was
+    still falling 0.2 every 300 steps; the position-table model, stuck,
+    crept only from 6.03 to 5.90 over the same 20,000 steps.
+13. **Phrases return.** With random order at 256 steps, distinct-2 ends
+    below 0.66 (0.692 at 2,000 steps), falling towards real text's
+    0.59 as more pairs of words become real phrases. Checked also by
+    reading: more grammatical runs of five words or more.
+14. **The gap narrows.** The masked bound ends less than 35% above the
+    control's validation loss (49% at 2,000 steps). Mechanism: in nine
+    passes the next-token model sees the same targets with the same
+    context every time and begins to memorize them, while the masked
+    model sees each window with a new mask every pass, so repeated text
+    still teaches it something new. Masked models have been reported to
+    gain on next-token models when data is repeated. Check: the
+    control's training loss ends more than 0.2 below its validation
+    loss.
+
+**The results, 20,000 steps** (35 and 32 minutes on the M4):
+
+| Model, 20,000 steps | Held-out loss, nats | Perplexity | Training loss at the end |
+|---|---|---|---|
+| Masked diffusion, RoPE (bound) | 3.49 ± 0.05 | 33 | about 3.65 |
+| Next-token control, RoPE | 2.65 | 14 | about 2.09 |
+| tiny-llm-in-rust's model (2,000 steps), for reference | 3.23 | 25 | |
+
+**Prediction 12 (the bound ends under 4.0): right.** 3.49, from 4.91
+at 2,000 steps; ten times the training bought 1.4 nats, where the
+position-table model's bought 0.12. The masked model now beats
+tiny-llm-in-rust's 2,000-step model on loss, 7.8% above it before
+counting the bound's slack. (Its training loss, about 3.65 at the end,
+sits above the bound: they are different averages. Training averages
+over all the masked tokens in a batch, so the heavily masked windows,
+which hold most of them and are the hardest, count most; the bound
+gives every t the same weight.)
+
+**Prediction 14 (the gap narrows below 35%): right as worded, its
+mechanism not shown.** The bound is 31.8% above the control's
+validation loss, against 49% at 2,000 steps, and the check passed: the
+control's training loss ended 0.56 below its validation loss (more
+than 0.2). But the check was a poor one. At 2,000 steps, less than one
+pass over the text, so with nothing yet repeated, the control's gap was
+already 0.46 (2.84 against 3.30). Nine passes added only 0.10, so most
+of the gap is the held-out windows being harder than the average
+training batch, not memorization. And the narrowing has a simpler
+explanation, given as a caution at 2,000 steps: the masked model was
+further from done, still falling fast where the control was
+flattening, so more training helped it more. Repetition may help the
+masked model; this run can't separate that from its slower start.
+
+The text, from the 20,000-step model at 256 steps:
+
+| Order | Words | Repetition | Distinct-2 | Median rank settled first, last tenth |
+|---|---|---|---|---|
+| held-out stories | 12,684 | 0.11% | 0.590 | |
+| random, 16 steps | 1,673 | 1.08% | 0.619 | 5, 46 |
+| random, 64 steps | 1,679 | 0.89% | 0.593 | 6, 32 |
+| random, 256 steps | 1,661 | 0.72% | 0.634 | 6, 53 |
+| confidence, 16 steps | 1,573 | 1.46% | 0.169 | 0, 85 |
+| confidence, 64 steps | 1,574 | 1.14% | 0.117 | 4, 67 |
+| confidence, 256 steps | 1,709 | 0.00% | 0.174 | 13, 42 |
+
+**Prediction 13 (phrases return): right.** Distinct-2 0.634 with random
+order at 256 steps (below 0.66 predicted), and by reading, the change
+is large. The samples are TinyStories: sentences, mostly grammatical,
+in a consistent tense through a passage, with story shapes ("Once upon
+a time, there was a boy. He really loved to play and explore the world
+around his house."), dialogue, and endings ("lived happily ever!").
+What they lack is a plot: characters swap ("Lily and Lily"), objects
+double ("the ball ball"), and events don't follow from each other.
+
+Confidence order, from the same model, writes grammatical English on a
+loop:
+
+```text
+They have fun. They have fun. They have fun. They have fun together.
+The dog and the dog and the dog. They see the dog and the dog and the dog.
+```
+
+The two orders now fail exactly as greedy and sampled decoding fail in
+next-token models: greedy choice is fluent and degenerate, sampling is
+varied and drifts. Its 0.00% repetition is a blind spot in that
+measure, which counts a word repeated straight after itself, not
+phrases repeated: distinct-2, 0.174, is the measure that sees the
+loops.
+
+The infill still doesn't use the story around it. With random order,
+the model ends the story in the gap and starts another ("Once upon a
+time there was a little girl named Mia"), though the text after the
+gap continues Josh's; with confidence order, it writes a mother and
+child talking ("His mom smiled and said, "I'm sorry, Mommy.""), closer
+to the scene but on a loop, and nothing about sneezing. Reading both
+sides of a gap is what a masked model is trained for; at this size
+and this loss, it takes the setting from them (a mother, a child,
+dialogue) but not the subject.
 
 ## How far could this go?
 
