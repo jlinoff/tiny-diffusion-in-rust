@@ -150,7 +150,7 @@ impl<T: Float> TextModel<T> {
 
     /// The same network with the causal mask (`causal`), each position
     /// seeing only those before it: tiny-llm-in-rust's model exactly, for
-    /// the control of stage 6 (PLAN.md, Stage 6 results so far).
+    /// the control of stage 6 (PLAN.md, Stage 6 results).
     pub fn forward_with(
         &self,
         tape: &mut Tape<T>,
@@ -329,7 +329,7 @@ pub struct TextTraining {
     /// The smallest t drawn: t is uniform on (t_min, 1), so at most
     /// 1 − t_min of a window is masked. 0, the default, masks anywhere from
     /// none to all; a larger value is the lighter masking of stage 6's
-    /// diagnostic (PLAN.md, Stage 6 results so far).
+    /// diagnostic (PLAN.md, Stage 6 results).
     pub t_min: f64,
     /// The control: train the same network as tiny-llm-in-rust trains its
     /// own, causal, predicting each next token, no masking.

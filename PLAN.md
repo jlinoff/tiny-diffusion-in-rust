@@ -67,7 +67,7 @@ names are explained where they first appear.
   - [Running it](#running-it-3)
   - [Stage 5 results](#stage-5-results)
   - [What stage 5 taught](#what-stage-5-taught)
-- [Stage 6: text, later](#stage-6-text-later)
+- [Stage 6: text](#stage-6-text)
   - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
@@ -77,7 +77,8 @@ names are explained where they first appear.
   - [Predictions](#predictions-4)
   - [What was built](#what-was-built-3)
   - [Running it](#running-it-4)
-  - [Stage 6 results so far](#stage-6-results-so-far)
+  - [Stage 6 results](#stage-6-results)
+  - [What stage 6 taught](#what-stage-6-taught)
 - [How far could this go?](#how-far-could-this-go)
   - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
@@ -295,10 +296,10 @@ the example changes at every sampling step.
    what the velocity field looks like at each t, which patches attend to
    which, and how early in generation the digit's identity is settled
    (stage 3's progress rows already answer that roughly: by t = 0.5).
-6. **Text, later** (optional; see [Stage 6](#stage-6-text-later)): a
-   masked diffusion language model on TinyStories (tiny-llm-in-rust's
-   corpus of short, simple stories), reusing tiny-llm-in-rust's
-   tokenizer, compared with tiny-llm-in-rust's model at the same size.
+6. **Text** (done: see [Stage 6](#stage-6-text)): a masked diffusion
+   language model on TinyStories (tiny-llm-in-rust's corpus of short,
+   simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
+   tiny-llm-in-rust's model at the same size.
 
 Each stage ends the way tiny-llm-in-rust's did: predictions written down
 first, then the measurements, including the ones that turn out wrong.
@@ -1942,7 +1943,7 @@ hold, at every moment of the path.
    generation is, for most of its length, a straight line at constant
    speed, which is why ten Euler steps do nearly as well as fifty.
 
-## Stage 6: text, later
+## Stage 6: text
 
 ### Where it fits
 
@@ -2282,15 +2283,16 @@ From this project's folder, with tiny-llm-in-rust beside it (or
 
 | Command | What it does |
 |---|---|
-| `make text` | trains the masked diffusion model on tiny-llm-in-rust's corpus, reports the diffusion bound beside tiny-llm-in-rust's validation loss (minutes) |
+| `make text` | trains the masked diffusion model on tiny-llm-in-rust's corpus, with rotary positions (RoPE, rotary position embedding: Stage 6 results, Decision 8), for 20,000 steps (`TEXT_STEPS`; about 35 minutes on an M4), and reports the diffusion bound beside tiny-llm-in-rust's validation loss |
+| `make text TEXT_STEPS=2000` | the quick model, at tiny-llm-in-rust's budget (about 4 minutes): bound about 4.9, stories still poor |
 | `make llm-stories` | 8 stories from tiny-llm-in-rust's trained model, by its own program, into `out/llm-stories.txt`, with its decoding speed |
-| `make text-sample` | stories at 16, 64 and 256 steps (`out/text-s16.txt` …), their speed and order of settling, an infilled story (`out/text-infill.txt`), and the text measures for real stories, tiny-llm-in-rust's and this model's |
+| `make text-sample` | stories at 16, 64 and 256 steps in random order (`out/text-random-s16.txt` …) and in confidence order (`out/text-s16.txt` …), their speed and order of settling, an infilled story for each (`out/text-random-infill.txt`, `out/text-infill.txt`), and the text measures for real stories, tiny-llm-in-rust's and this model's |
 
 For prediction 2's check, tiny-llm-in-rust's validation loss at step
 1,000 and at 2,000 of the same run: from its training log, or
 `make -B train` there, which prints both.
 
-### Stage 6 results so far
+### Stage 6 results
 
 **The first run, at tiny-llm-in-rust's budget** (`make text`: 2,000 steps
 of 8 windows, 3 min 29 s on the M4):
@@ -2836,6 +2838,57 @@ sides of a gap is what a masked model is trained for; at this size
 and this loss, it takes the setting from them (a mother, a child,
 dialogue) but not the subject.
 
+### What stage 6 taught
+
+1. **A control separates a bug from a finding.** Three runs stuck at
+   the unigram level could have been a fault in this project's code or
+   a property of masked diffusion. The same network trained next-token,
+   with nothing else changed, learned at once, so the code was sound
+   and the plateau was the masked objective's. Without it, every later
+   experiment would have been a guess about which of the two to fix.
+2. **The plateau was positions, and two good guesses were wrong.**
+   Heavy masking and the large vocabulary each had a plausible
+   mechanism; lighter masking changed nothing, and RoPE fixed the
+   4,096-token text as quickly as the 50-token one. The cause was that a
+   masked position has nothing of its own, so everything must come by
+   attention, and with learned positions "the token before me" had to
+   be learned 256 times over. Synthetic texts, where the answer was
+   known, isolated it; real text could not have.
+3. **The sampler is half of a diffusion language model.** The same
+   model gave a flood of full stops or TinyStories prose depending only
+   on which drawn tokens each step kept. Confidence order is greedy
+   decoding: fluent, then degenerate (full stops when the model was
+   weak, "They have fun. They have fun." when it was strong); random
+   order is sampling: varied, and drifting. A next-token model's order
+   is given; a masked model's has to be chosen, and the choice matters
+   as much as the training.
+4. **Masked training buys less per token.** On the same network, data
+   and budget, the masked bound was 49% above next-token loss at 2,000
+   steps and 32% at 20,000. Ten times the training turned unreadable
+   text into stories, but the next-token model's stories needed only
+   the first 2,000 steps. Whether seeing the same text nine times helps
+   the masked model more couldn't be told apart from its slower start.
+5. **The speed promise needs scale.** At 1.3 million parameters,
+   diffusion generated at 960 tokens per second with 16 steps against
+   tiny-llm-in-rust's 2,498: each step is a full pass over all 256
+   positions, and a model this small is limited by per-operation
+   overhead, not by reading its weights. The saving diffusion offers,
+   reading the weights once for many tokens, appears only when reading
+   the weights is the cost, in models of billions of parameters.
+6. **The measures need reading beside them.** Distinct-2 above real
+   text's meant word salad, not richness; 0.00% repetition sat beside
+   text looping "the dog and the dog". Each number answered a narrower
+   question than its name, and the samples showed which.
+7. **Which problems are real research, and which are this project's.**
+   The order of unmasking, tokens settled together without seeing each
+   other, and masked training's cost in compute are the problems text
+   diffusion research works on: LLaDA's blocks and re-masking, faster
+   samplers, and starting from a trained next-token model (DiffuLLaMA,
+   Dream) are answers to them. The positional plateau isn't: no current
+   model uses learned positions, and at billions of parameters a model
+   starting from all MASK already knows how stories begin, so the
+   failures seen here are the same problems, much enlarged.
+
 ## How far could this go?
 
 tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
@@ -3045,7 +3098,7 @@ here as they come up, and stay open until settled.
    patch size. `train-img` keeps 4 × 4 as its default, so `make digits`
    means what it did; stage 4's targets ask for `--patch 7` explicitly.
 8. **Stage 6's text model uses rotary positions (RoPE).** Decided by
-   prediction 8 (Stage 6 results so far): with RoPE the masked model
+   prediction 8 (Stage 6 results): with RoPE the masked model
    left the plateau on TinyStories, bound 4.91 against 6.24. Stage 6's
    plan said tiny-llm-in-rust's network, with attention made
    bidirectional and nothing else changed, so that the two models would

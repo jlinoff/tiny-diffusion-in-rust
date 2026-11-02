@@ -11,8 +11,8 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: stages 1 to 5 of 6 done: images on request, and a look
-inside.** Stage 2 did flow
+**Status: all six stages done: images on request, a look inside, and
+a diffusion language model.** Stage 2 did flow
 matching and DDPM (the original diffusion recipe) on 2D data, with plots
 of the samples, the paths from noise to data, and the learned velocity
 field. Stage 3 trains a 1.8-million-parameter diffusion transformer on
@@ -23,6 +23,9 @@ push towards the requested digit, of a strength w set when sampling), and
 measures the results with a digit classifier built for the purpose.
 Stage 5 looks inside the trained models: what they are drawing at each
 moment, how straight their paths are, and where attention looks.
+Stage 6 turns to text: a masked diffusion language model, trained on
+the same stories as tiny-llm-in-rust's model and compared with it, from
+the plateau it first couldn't leave to the stories it writes.
 Every stage arrives with its tests, and `make test` and continuous
 integration have run from the first commit.
 
@@ -75,8 +78,8 @@ make measure-stage3 # the classifier's verdict on stage 3's digit models
 make digits-cond    # the DiT told which digit to draw (7×7 patches): about half an hour
 make guidance       # how the guidance scale trades clarity for variety: a table and a grid per scale
 make inside         # stage 5: look inside the trained models: their guesses, paths, guidance's push, attention
-make text           # stage 6: a masked diffusion language model on tiny-llm-in-rust's stories, beside its model
-make text-sample    # its stories at 16, 64 and 256 steps, an infilled story, and the text measures
+make text           # stage 6: a masked diffusion language model on tiny-llm-in-rust's stories, beside its model: about 35 minutes
+make text-sample    # its stories at 16, 64 and 256 steps in two orders, infilled stories, and the text measures
 make test           # every check: the tests, a smoke test of every command, formatting, lint
 make help           # every target, and every variable with its value
 ```

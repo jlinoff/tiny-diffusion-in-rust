@@ -187,11 +187,14 @@ inside: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Stage 5: look inside the
 # Stage 6, text (PLAN.md): a masked diffusion language model on
 # tiny-llm-in-rust's tokenizer and corpus, read from its out/ folder
 # (LLM_OUT), and compared with its trained model there (model.safetensors).
-# The model uses rotary positions (--rope, Decision 8 in PLAN.md).
-# TEXT_ARGS passes options to train-text. TEXT_AR_SAMPLES is a file of
+# The model uses rotary positions (--rope, Decision 8 in PLAN.md) and
+# trains for TEXT_STEPS steps: 20,000, about 35 minutes on an M4, since
+# the stories improve so much over the first 2,000 (PLAN.md, Stage 6
+# results). TEXT_ARGS passes other options to train-text. TEXT_AR_SAMPLES is a file of
 # tiny-llm-in-rust's own stories (make llm-stories), measured beside this
 # model's when it exists.
 LLM_OUT         ?= ../tiny-llm-in-rust/out
+TEXT_STEPS      ?= 20000
 TEXT_ARGS       ?=
 TEXT_AR_SAMPLES ?= $(OUT)/llm-stories.txt
 
@@ -200,18 +203,21 @@ $(OUT)/text.safetensors: | $(DIFFUSION) $(OUT)
 		test -f $(LLM_OUT)/$$f || { echo "no $(LLM_OUT)/$$f: run make encode in tiny-llm-in-rust, or set LLM_OUT"; exit 1; }; \
 	done
 	$(call hdr,train-text)
-	$(DIFFUSION) train-text --ids $(LLM_OUT)/corpus.ids --rope \
+	$(DIFFUSION) train-text --ids $(LLM_OUT)/corpus.ids --rope --steps $(TEXT_STEPS) \
 		$(if $(wildcard $(LLM_OUT)/model.safetensors),--compare $(LLM_OUT)/model.safetensors) $(TEXT_ARGS) -o $@
 
 .PHONY: text text-sample
-text: $(OUT)/text.safetensors ## Stage 6: train the masked diffusion language model on tiny-llm-in-rust's corpus: minutes.
+text: $(OUT)/text.safetensors ## Stage 6: train the masked diffusion language model on tiny-llm-in-rust's corpus: about 35 minutes.
 
-text-sample: $(OUT)/text.safetensors | $(DIFFUSION) ## Stage 6: stories at 16, 64 and 256 steps, timed; an infilled story; the text measures.
-	$(call hdr,sample-text)
+text-sample: $(OUT)/text.safetensors | $(DIFFUSION) ## Stage 6: stories at 16, 64 and 256 steps in random and confidence order, timed; infilled stories; the text measures.
+	$(call hdr,sample-text: random order)
+	$(DIFFUSION) sample-text --model $< --tokenizer $(LLM_OUT)/tok.bpe --ids $(LLM_OUT)/corpus.ids --order random --out-prefix $(OUT)/text-random
+	$(call hdr,sample-text: confidence order)
 	$(DIFFUSION) sample-text --model $< --tokenizer $(LLM_OUT)/tok.bpe --ids $(LLM_OUT)/corpus.ids --out-prefix $(OUT)/text
 	$(call hdr,text measures)
 	python3 tools/text_stats.py $(OUT)/text-real.txt \
 		$(if $(wildcard $(TEXT_AR_SAMPLES)),--tiny-llm $(TEXT_AR_SAMPLES)) \
+		$(OUT)/text-random-s16.txt $(OUT)/text-random-s64.txt $(OUT)/text-random-s256.txt \
 		$(OUT)/text-s16.txt $(OUT)/text-s64.txt $(OUT)/text-s256.txt
 
 # tiny-llm-in-rust's own stories, 8 of up to 256 tokens from 'Once upon a
@@ -295,7 +301,7 @@ clean: ## Remove generated files (keeps data/).
 # value now. A variable meant to be set from the command line gets a line
 # here and a HELP_ description.
 HELP_VARS := OUT CARGO_FEATURES TRAIN2D_ARGS IMG_ARGS SHAPES_ARGS PEEK_MODEL \
-	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS LLM_OUT TEXT_ARGS \
+	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS LLM_OUT TEXT_STEPS TEXT_ARGS \
 	TEXT_AR_SAMPLES URL_mnist URL_fashion
 HELP_OUT             := where models, plots and images are written
 HELP_CARGO_FEATURES  := blas: Apple Accelerate for large matrix products (default on macOS); empty: plain Rust
@@ -308,6 +314,7 @@ HELP_GUIDE_MODEL     := the labelled model make guidance measures
 HELP_GUIDANCE        := the guidance scales make guidance measures and draws
 HELP_INSIDE_MODELS   := the models make inside looks into (names in out/, without .safetensors)
 HELP_LLM_OUT         := tiny-llm-in-rust's out/ folder: its tok.bpe, corpus.ids and model.safetensors
+HELP_TEXT_STEPS      := training steps for make text (2000 for a quick model, tiny-llm-in-rust's budget)
 HELP_TEXT_ARGS       := options for train-text, the masked diffusion language model (diffusion train-text --help)
 HELP_TEXT_AR_SAMPLES := tiny-llm-in-rust's stories (make llm-stories writes them), measured beside this model's by make text-sample
 HELP_URL_mnist       := where MNIST is downloaded from
