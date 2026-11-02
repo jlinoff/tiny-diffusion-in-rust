@@ -2007,7 +2007,9 @@ two within a sequence (Zhou et al. 2024).
 | Passes for 256 tokens | 256 | a chosen number of steps, say 64 |
 | KV cache | yes: earlier tokens' keys and values never change | no simple one: every position can change until settled, and each pass recomputes all of them |
 | A token, once written | final | settled when kept; before that, revised freely |
-| Prompt, infilling | prompt yes; infilling awkward | both natural |
+| Continuing a prompt | natural: the prompt is the start, and generation carries on from it | natural: the prompt's positions are fixed, and the rest unmasked |
+| Infilling (a gap in the middle) | awkward: it sees only the text before the gap, unless specially trained for it | natural: it sees both sides of the gap |
+| Streaming (showing text as it is written) | yes: each token is final when written, so it can be shown or sent at once | hard: any position may change until the last step, so the text arrives all at once; the first word waits as long as the whole story |
 
 What that means for efficiency, in the terms tiny-llm-in-rust measured:
 
@@ -2027,8 +2029,12 @@ What that means for efficiency, in the terms tiny-llm-in-rust measured:
   arithmetic is plentiful and passes are the bottleneck, as on a GPU
   (graphics processing unit, the chips most models are trained on), not
   a free saving.
-- **Costs in use**: text that may still change is hard to stream as it's
-  written, which matters for code, structured data and speech.
+- **Costs in use**: the streaming row above. Text that may still change
+  can't be shown as it's written, which matters wherever a reader or a
+  program waits for the first words: chat, code, structured data and
+  speech. Block diffusion (Arriola et al. 2025) is one answer: blocks
+  left to right, diffusion within each, so finished blocks can be
+  streamed.
 
 Where the field stood in August 2026, as a dated note rather than a
 result of this project: hosted diffusion models generated roughly 800 to
@@ -2037,10 +2043,10 @@ scored well below the best autoregressive models on quality, and their
 first-answer times weren't better (BenchLM 2026; figures from different
 models and hardware, so indicative only).
 
-**The experiment for stage 6**, then, at a size this project can
-measure: a masked diffusion model and tiny-llm-in-rust's model, the same
-tokenizer, corpus and parameter count, both on the M4. Predictions to
-record before running:
+**The experiment for stage 6** compares a masked diffusion model with
+tiny-llm-in-rust's model at a size this project can measure: the same
+tokenizer, corpus and parameter count, both run on the M4. These
+predictions were recorded before running:
 
 - diffusion generates a story faster, since the M4 is bandwidth-limited
   as above, by a factor that depends on the number of steps;
@@ -2071,10 +2077,9 @@ around the forward pass:
 | Earlier work reused | the KV cache: past tokens are never recomputed | none: every pass recomputes every position, since any of them can attend to the ones just settled |
 | The prompt | processed once, then cached | part of the canvas, recomputed on every pass |
 
-Hybrids sit between the two. **Block diffusion** generates blocks of
-tokens left to right, autoregressively, and runs diffusion within each
-block, so finished blocks can be cached as an autoregressive model's
-past is (Arriola et al. 2025); approximate caching schemes reuse the
+Hybrids sit between the two. **Block diffusion**, met above for
+streaming, also helps here: finished blocks can be cached as an
+autoregressive model's past is (Arriola et al. 2025); approximate caching schemes reuse the
 keys and values of positions that have nearly stopped changing.
 
 **Why SmolLM-1.7B can't be run as a diffusion model.** The open-weight
