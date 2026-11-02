@@ -58,6 +58,8 @@ $D train-text --ids diffusion/tests/data/tiny.ids --width 16 --blocks 1 --heads 
     --ffn 32 --steps 20 --log-every 10 --draws 2 --rope -o "$T/rope.safetensors"
 $D sample-text --model "$T/rope.safetensors" --tokenizer diffusion/tests/data/tiny.bpe \
     --ids diffusion/tests/data/tiny.ids --steps 2 --n 1 --out-prefix "$T/rope" > /dev/null
+$D sample-text --model "$T/rope.safetensors" --tokenizer diffusion/tests/data/tiny.bpe \
+    --ids diffusion/tests/data/tiny.ids --steps 2 --n 1 --order random --out-prefix "$T/rnd" > /dev/null
 step "sample-text"
 $D sample-text --model "$T/text.safetensors" --tokenizer diffusion/tests/data/tiny.bpe \
     --ids diffusion/tests/data/tiny.ids --steps 2,8 --n 2 --out-prefix "$T/text"

@@ -474,6 +474,9 @@ pub fn diffusion_bound(
 pub struct Sampling {
     pub temperature: f32,
     pub top_k: usize,
+    /// Which drawn tokens each step keeps: the most confident (false), or
+    /// positions chosen at random, as MDLM's sampler does (true).
+    pub random_order: bool,
 }
 
 /// A token drawn from one row of logits with temperature and top-k, and
@@ -513,8 +516,9 @@ pub struct Generated {
 /// Generate by unmasking, one sequence of `len` positions: those given in
 /// `fixed` (Some) are kept, the rest start as MASK; over `steps` steps,
 /// each predicts every masked position, draws a token at each, and keeps
-/// the most confident, as many as bring the settled share to (step + 1) /
-/// steps of the masked positions; the rest are masked again.
+/// the most confident (or, with `random_order`, positions chosen at
+/// random), as many as bring the settled share to (step + 1) / steps of
+/// the masked positions; the rest are masked again.
 pub fn generate(
     model: &TextModel<f32>,
     fixed: &[Option<usize>],
@@ -546,7 +550,8 @@ pub fn generate(
             .filter(|&&i| tokens[i] == mask && settled_at[i].is_none())
             .map(|&i| {
                 let (tok, p) = draw(logits.row(i), s, rng);
-                (p, i, tok)
+                let key = if s.random_order { rng.unit() as f32 } else { p };
+                (key, i, tok)
             })
             .collect();
         cands.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
@@ -772,6 +777,7 @@ mod tests {
                 Sampling {
                     temperature: 0.8,
                     top_k: 5,
+                    random_order: steps == 4,
                 },
                 &mut Rng::new(8),
             );
@@ -782,6 +788,39 @@ mod tests {
                 assert!(s.is_none_or(|k| k < steps));
             }
         }
+    }
+
+    /// With one position settled per step, confidence ordering settles
+    /// first wherever the model is surest, so the same few positions come
+    /// first; random ordering picks any position equally often.
+    #[test]
+    fn random_order_is_uniform() {
+        let mut m = TextModel::<f32>::new(small(), 7);
+        let mut rng = Rng::new(9);
+        for x in m.params.iter_mut().flat_map(|p| p.data.iter_mut()) {
+            *x += 0.5 * rng.normal() as f32;
+        }
+        let firsts = |random_order: bool| {
+            let mut count = [0usize; 6];
+            let mut rng = Rng::new(10);
+            for _ in 0..600 {
+                let s = Sampling {
+                    temperature: 0.8,
+                    top_k: 5,
+                    random_order,
+                };
+                let g = generate(&m, &[None; 6], 6, s, &mut rng);
+                count[g.settled_at.iter().position(|&k| k == Some(0)).unwrap()] += 1;
+            }
+            count
+        };
+        let random = firsts(true);
+        assert!(
+            random.iter().all(|&c| (70..=130).contains(&c)),
+            "{random:?}"
+        );
+        let confident = firsts(false);
+        assert!(*confident.iter().max().unwrap() > 200, "{confident:?}");
     }
 
     /// A golden test, as for the images.

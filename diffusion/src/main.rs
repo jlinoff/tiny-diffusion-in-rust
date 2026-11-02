@@ -390,6 +390,10 @@ enum Command {
         temperature: f32,
         #[arg(long, default_value_t = 40)]
         top_k: usize,
+        /// Which drawn tokens each step keeps: the most confident, or
+        /// positions chosen at random (MDLM's sampler).
+        #[arg(long, default_value = "confidence", value_parser = ["confidence", "random"])]
+        order: String,
         #[arg(long, default_value_t = 1)]
         seed: u64,
         #[arg(long, default_value_t = 0.05)]
@@ -1185,6 +1189,7 @@ fn run(command: Command) -> Result<(), String> {
             n,
             temperature,
             top_k,
+            order,
             seed,
             valid_fraction,
             out_prefix,
@@ -1194,7 +1199,11 @@ fn run(command: Command) -> Result<(), String> {
             &ids,
             &steps,
             n,
-            mini_diffusion::textmodel::Sampling { temperature, top_k },
+            mini_diffusion::textmodel::Sampling {
+                temperature,
+                top_k,
+                random_order: order == "random",
+            },
             seed,
             valid_fraction,
             &out_prefix,
@@ -1266,6 +1275,16 @@ fn sample_text(
     println!(
         "The 20 commonest tokens are {:.1}% of the training tokens",
         100.0 * top20 as f64 / train.len().max(1) as f64
+    );
+    println!(
+        "Each step keeps {} (temperature {}, top-k {})",
+        if s.random_order {
+            "positions chosen at random"
+        } else {
+            "the most confident tokens"
+        },
+        s.temperature,
+        s.top_k
     );
     let median = |v: &mut Vec<usize>| {
         v.sort();

@@ -2498,13 +2498,13 @@ of either kind it couldn't; files remember it.
 Predictions, written before any run with RoPE. Each assumes the plateau
 comes from finding neighbours with learned positions, as above:
 
-1. Synthetic text, 50 tokens, 256 positions, at most 30% masked (stuck
+6. Synthetic text, 50 tokens, 256 positions, at most 30% masked (stuck
    at 2.91 with the position table): leaves the unigram level, under
    2.0 by step 600.
-2. Synthetic text, 4,096 tokens, 64 positions, at most 30% masked
+7. Synthetic text, 4,096 tokens, 64 positions, at most 30% masked
    (stuck at 4.79 for 400 steps): under 4.5 by step 400. Less sure:
    4,096 pairings must still be learned, each from few examples.
-3. TinyStories, `make text`'s settings plus `--rope` (256 positions,
+8. TinyStories, `make text`'s settings plus `--rope` (256 positions,
    full masking, 2,000 steps): the training loss leaves the plateau
    and ends under 5.0, and the diffusion bound ends between 4.0 and
    5.0, that is, 25% to 55% above tiny-llm-in-rust's 3.23. Not near
@@ -2514,15 +2514,40 @@ comes from finding neighbours with learned positions, as above:
    same budget. MDLM, at a hundred times this size, still trails a
    matched next-token model.
 
-   Then, for a clean comparison (Decision 8): the control with RoPE,
-   `train-text --next-token --rope`, the same network trained
-   next-token. Its validation loss is the yardstick for prediction 3's
-   bound, in place of the first control's 3.53, which had learned
-   positions. Prediction: within 0.15 of the first control, 3.38 to
-   3.68, because a next-token model gets its first lessons through the
-   residual stream and learns well with either kind of position.
+**Prediction 6: right.** With RoPE, the 50-token synthetic text at 256
+positions left the unigram level by step 200:
 
-**Prediction 3: right, barely.** On TinyStories with RoPE, the masked
+| Step | 100 | 200 | 300 | 600 |
+|---|---|---|---|---|
+| Position table | 3.05 | | 2.93 | 2.91 |
+| RoPE | 2.81 | 1.62 | 1.42 | 1.25 |
+
+(Diffusion bound 1.79, though this model was trained with at most 30%
+masked.)
+
+**Prediction 7: right, by far more than predicted.** The 4,096-token
+synthetic text at 64 positions, where the position table sat at the
+unigram level (4.775):
+
+| Step | 50 | 100 | 200 | 300 | 400 |
+|---|---|---|---|---|---|
+| Position table | 6.79 | 4.89 | 4.78 | 4.84 | 4.79 |
+| RoPE | 6.78 | 4.35 | 3.03 | 2.85 | 2.70 |
+
+(Predicted under 4.5 by step 400.) So the large vocabulary wasn't what
+held that model either: it was finding the neighbour. Learning 4,096
+pairings, once the model can find the token before, took only a few
+hundred steps.
+
+**For a clean comparison, the control with RoPE** (Decision 8;
+written before it and prediction 8 were run): `train-text --next-token
+--rope`, the same network trained next-token. Its validation loss is the yardstick for prediction 8's
+bound, in place of the first control's 3.53, which had learned
+positions. Prediction: within 0.15 of the first control, 3.38 to
+3.68, because a next-token model gets its first lessons through the
+residual stream and learns well with either kind of position.
+
+**Prediction 8: right, barely.** On TinyStories with RoPE, the masked
 model left the plateau at about step 700, and was still falling
 steeply when the learning rate ran down:
 
@@ -2565,30 +2590,82 @@ And the masked model was still falling fast at step 2,000, where the
 control was flattening (0.05 over its last 300 steps, against 0.21), so
 the gap at this budget overstates the gap at convergence.
 
-**Prediction 1: right.** With RoPE, the 50-token synthetic text at 256
-positions left the unigram level by step 200:
+**The text measures again, with RoPE** (`make text-sample`, the same
+eight windows of 256 tokens per step count):
 
-| Step | 100 | 200 | 300 | 600 |
+| Text | Words | Repetition | Distinct-2 | Median rank settled first, last tenth |
 |---|---|---|---|---|
-| Position table | 3.05 | | 2.93 | 2.91 |
-| RoPE | 2.81 | 1.62 | 1.42 | 1.25 |
+| held-out stories | 12,684 | 0.11% | 0.590 | |
+| tiny-llm-in-rust's stories | 1,045 | 0.29% | 0.603 | |
+| diffusion, 16 steps | 711 | 18.6% | 0.245 | 0, 34 |
+| diffusion, 64 steps | 641 | 23.7% | 0.156 | 0, 28 |
+| diffusion, 256 steps | 505 | 26.5% | 0.113 | 0, 28 |
 
-(Diffusion bound 1.79, though this model was trained with at most 30%
-masked.)
+**Prediction 5 (easy tokens first): right, now that it can be tested.**
+The tokens settled in the first tenth of the steps have median rank 0,
+the corpus's commonest token; those settled in the last tenth, 28 to
+34 (at least 5 times was predicted).
 
-**Prediction 2: right, by far more than predicted.** The 4,096-token
-synthetic text at 64 positions, where the position table sat at the
-unigram level (4.775):
+**Prediction 4 (fewer steps, more repetition): wrong, reversed.**
+Repetition rises with the steps, 18.6%, 23.7%, 26.5%, and distinct-2
+falls. Read, the samples show why. From scratch they are mostly full
+stops with the commonest short words between them:
 
-| Step | 50 | 100 | 200 | 300 | 400 |
-|---|---|---|---|---|---|
-| Position table | 6.79 | 4.89 | 4.78 | 4.84 | 4.79 |
-| RoPE | 6.78 | 4.35 | 3.03 | 2.85 | 2.70 |
+```text
+.. you. Lily.. you. play. not. you. a. a. a. a.. a
+... you.. you.. you.. you. play. you. you.. you. play...
+```
 
-(Predicted under 4.5 by step 400.) So the large vocabulary wasn't what
-held that model either: it was finding the neighbour. Learning 4,096
-pairings, once the model can find the token before, took only a few
-hundred steps.
+Prediction 5's mechanism is the cause. At the first step every position
+is MASK, the model's best guess everywhere is its commonest token, the
+full stop, and confidence ordering settles the position it is surest
+of. With one token a step, it goes on choosing the surest, and a full
+stop beside other full stops stays the surest guess, so the window
+fills with them before anything else; the last positions, between
+full stops, can only hold "a", "you" or "the". With 16 a step, each step
+must also settle 15 positions it is less sure of, which breaks the
+pattern up. So the repetition isn't neighbours settled together (the
+prediction's mechanism) but greedy choice, which favours the commonest
+token, like greedy decoding in a next-token model.
+
+The infill, given a story on both sides, shows what the model can do
+with context. Story: a boy asks his mother why we sneeze. The model's
+middle, at 256 steps:
+
+```text
+The little mom to play to the park. He was very happy and the girl was
+very happy. He was very happy and it to play to the park.
+```
+
+TinyStories English, if not this story: the sentence frames of the
+corpus, loops of "He was very happy", and no use of the sneeze. With
+context, the model writes sentences. From nothing, confidence ordering
+gives it no context to start from.
+
+**The next change: the sampler, not the model.** `sample-text --order
+random` keeps, at each step, the tokens drawn at positions chosen at
+random instead of the most confident ones: MDLM's own sampler, in
+which every masked position is equally likely to be settled next. The
+tokens are drawn as before (temperature 0.8, top-k 40), so only the
+choice of which to keep changes. Test: with one position settled a
+step, random ordering settles each position first equally often, while
+confidence ordering returns to the same few.
+
+Predictions, written before any run with random order, on the same
+model (`out/text.safetensors`, RoPE, 2,000 steps):
+
+9. **No flood of full stops.** At 256 steps, repetition under 10% and
+   distinct-2 above 0.3 (confidence order: 26.5% and 0.113).
+   Mechanism: a full stop is settled only where it is drawn, about as
+   often as full stops occur in stories, instead of wherever the model
+   is surest.
+10. **More steps no longer hurt.** Repetition at 256 steps is no higher
+   than at 16. Mechanism: with random positions, settling one token a
+   step gives each later token more settled context, which can only
+   help; the greedy loop that made more steps worse is gone.
+11. **Early tokens are no longer all full stops.** The median rank of
+   the tokens settled in the first tenth is above 0. They are still
+   drawn with little context, so they stay common words: under 20.
 
 ## How far could this go?
 
@@ -2799,7 +2876,7 @@ here as they come up, and stay open until settled.
    patch size. `train-img` keeps 4 × 4 as its default, so `make digits`
    means what it did; stage 4's targets ask for `--patch 7` explicitly.
 8. **Stage 6's text model uses rotary positions (RoPE).** Decided by
-   prediction 3 (Stage 6 results so far): with RoPE the masked model
+   prediction 8 (Stage 6 results so far): with RoPE the masked model
    left the plateau on TinyStories, bound 4.91 against 6.24. Stage 6's
    plan said tiny-llm-in-rust's network, with attention made
    bidirectional and nothing else changed, so that the two models would
