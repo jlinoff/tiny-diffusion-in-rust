@@ -2514,6 +2514,14 @@ comes from finding neighbours with learned positions, as above:
    same budget. MDLM, at a hundred times this size, still trails a
    matched next-token model.
 
+   Then, for a clean comparison (Decision 8): the control with RoPE,
+   `train-text --next-token --rope`, the same network trained
+   next-token. Its validation loss is the yardstick for prediction 3's
+   bound, in place of the first control's 3.53, which had learned
+   positions. Prediction: within 0.15 of the first control, 3.38 to
+   3.68, because a next-token model gets its first lessons through the
+   residual stream and learns well with either kind of position.
+
 **Prediction 1: right.** With RoPE, the 50-token synthetic text at 256
 positions left the unigram level by step 200:
 
@@ -2747,6 +2755,30 @@ here as they come up, and stay open until settled.
    with one 4 × 4 run, to check that its conclusions don't depend on the
    patch size. `train-img` keeps 4 × 4 as its default, so `make digits`
    means what it did; stage 4's targets ask for `--patch 7` explicitly.
+8. **Stage 6's text model uses rotary positions (RoPE).** Proposed,
+   to be decided by prediction 3 (Stage 6 results so far). Stage 6's
+   plan said tiny-llm-in-rust's network, with attention made
+   bidirectional and nothing else changed, so that the two models would
+   differ in their objective alone. That plan is set aside because:
+   - *with learned positions, the masked model doesn't learn here*: it
+     stayed at the unigram level for the whole 2,000-step budget, on
+     real stories and on easy synthetic text alike, while the same
+     network trained next-token left it within 200 steps (the control);
+   - *RoPE removes the cause*: a masked position has to find its
+     neighbours through attention, and RoPE makes "the token before me"
+     one pattern instead of 256; both synthetic tests left the plateau
+     within 200 steps with it;
+   - *it is what production uses*: MDLM, LLaDA and almost every recent
+     language model have rotary positions, so the change makes the
+     model more representative, not less.
+
+   The cost is the clean comparison: the masked model and tiny-llm-in-
+   rust's no longer share a network. So the comparison is made against
+   a control with RoPE as well (`train-text --next-token --rope`): same
+   network, same budget, masked against next-token, so the gap between
+   them is the masked objective's alone. tiny-llm-in-rust's own model
+   stays in the table, for reference. If prediction 3 comes out right,
+   `make text` passes `--rope` and this decision is marked decided.
 
 ## Where things live
 
