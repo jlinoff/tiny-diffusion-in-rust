@@ -78,6 +78,10 @@ names are explained where they first appear.
   - [What was built](#what-was-built-3)
   - [Running it](#running-it-4)
   - [Stage 6 results so far](#stage-6-results-so-far)
+- [How far could this go?](#how-far-could-this-go)
+  - [Open models](#open-models)
+  - [Why latent models need their autoencoder](#why-latent-models-need-their-autoencoder)
+  - [What supporting latent diffusion would take](#what-supporting-latent-diffusion-would-take)
 - [Decisions](#decisions)
 - [Where things live](#where-things-live)
 - [Bibliography](#bibliography)
@@ -2341,6 +2345,95 @@ below 4.2. Mechanism: the counting task's plateau, scaled from 128 to
 10,000 or more to learn; prediction 2's reasons for a gap remain.
 Check: only that scaling, from two points; low confidence.
 
+## How far could this go?
+
+tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
+own code. This section asks the same of diffusion: which open models
+exist, which could this project's code run, and what it would take.
+Written as a plan, not yet done.
+
+### Open models
+
+| Model | What it is | Size | Fits this project? |
+|---|---|---|---|
+| MDLM (`kuleshov-group/mdlm-owt`) | masked diffusion on text, stage 6's objective, trained on OpenWebText (an open copy of the web pages GPT-2 learned from) for a million steps, context 1,024 | about GPT-2 small's (around 100 million parameters) | the closest: one transformer, like SmolLM was for tiny-llm-in-rust |
+| LLaDA 8B (`GSAI-ML/LLaDA-8B-Base`) | masked diffusion at scale, trained from scratch, MIT license | 8 billion | too large here: 16 GB in bf16, 32 in this project's f32 |
+| Dream 7B | adapted from Qwen2.5-7B (stage 6, Inference compared) | 7 billion | too large, as LLaDA |
+| DiT-XL/2 (`facebook/DiT-XL-2-256`) | the DiT paper's model: ImageNet (1.3 million photographs in 1,000 classes) images of 256 × 256 pixels, by class, with classifier-free guidance; CC BY-NC 4.0 (non-commercial) | 675 million, plus a 84-million-parameter autoencoder; 3.3 GB | yes, with an autoencoder (below): stage 4 at full scale |
+| Stable Diffusion, FLUX.1 [schnell] (Black Forest Labs' fast model) | text to image; FLUX.1 [schnell] a flow-matching transformer under Apache 2.0 | about 1 billion; 12 billion | no: two more networks, and FLUX's size |
+
+### Why latent models need their autoencoder
+
+The image models above don't diffuse pixels. They are **latent
+diffusion** models (Rombach et al. 2022): the diffusion runs in a
+compressed copy of the image, its **latent**, made by a separate network,
+an **autoencoder**, trained beforehand to squeeze an image down and
+expand it back. Stable Diffusion's (a **VAE**, variational autoencoder)
+turns a 256 × 256 × 3 image, 196,608 values, into a 32 × 32 × 4 latent,
+4,096 values: 48 times fewer, so the diffusion model is 48 times
+cheaper per step, and spends its effort on what the image shows rather
+than on fine pixel noise the autoencoder restores anyway.
+
+So a latent model's output is a latent, not an image. Without the
+autoencoder's decoder, the half that expands a latent back into
+pixels, what it generates is a 32 × 32 × 4 array of numbers: its four
+channels look at best like faint, blurred thumbnails, and nothing that
+displays it as a picture exists without the decoder. Every latent
+model ships with its autoencoder for that reason (DiT-XL/2's folder on
+Hugging Face holds it, under `vae/`), and generating means two networks
+in turn: the diffusion model, many times, then the decoder, once.
+Training one would also need the encoder, to turn the training images
+into latents.
+
+### What supporting latent diffusion would take
+
+Three levels, in increasing cost:
+
+1. **Running DiT-XL/2 (generation only): feasible, about a stage's
+   work.** The diffusion transformer is close to this project's DiT:
+   patches (2 × 2 of the latent, 256 tokens), adaLN-Zero, a class table
+   with an extra "no label" row, a time network. The differences: it
+   predicts DDPM's noise (stage 2's objective, whose samplers exist)
+   rather than a velocity, plus a learned variance for each value; and
+   its time features and sizes differ (width 1,152, 28 blocks, 16
+   heads). New is the decoder: a convolutional network, which this
+   project hasn't built. A **convolution** slides a small learned
+   filter across the image, the same weights at every position; the
+   decoder stacks them with **group normalization** (layer normalization
+   over groups of channels), SiLU, residual connections, one
+   self-attention block, and **upsampling** (doubling the image's width
+   and height). For generation only, these need forward passes, no
+   gradients: a convolution can be computed as a matrix product (each
+   position's neighbourhood laid out as a row, then multiplied by the
+   filters), using the matrix code that exists. Checked the way
+   tiny-llm-in-rust checked SmolLM: reference outputs from the official
+   Python code (diffusers), compared number for number. Cost on the M4:
+   the paper gives about 119 billion operations per forward pass of
+   DiT-XL/2, so at tiny-llm-in-rust's measured 170 to 190 billion a
+   second, about 0.7 seconds a pass, 1.4 with guidance: 50 DDIM steps
+   (stage 2's fast sampler) in about a minute per batch of images,
+   plus a few seconds for the decoder. Memory: 2.7 GB of weights in f32.
+2. **Training a latent model of our own: possible, not worthwhile here.**
+   It would need the encoder as well (the same convolutions, in
+   reverse), and data worth compressing: MNIST's 28 × 28 digits are
+   already smaller than a latent. The lesson of latent diffusion is
+   about large images.
+3. **Text to image (Stable Diffusion, FLUX): out of reach.** A third
+   network, a text encoder (Stable Diffusion's CLIP (contrastive
+   language-image pretraining), 123 million parameters; FLUX also T5, a
+   text-to-text transformer, 4.7 billion), feeding the diffusion model
+   through cross-attention (the image's tokens attending to the text's),
+   and for Stable Diffusion a convolutional UNet (a network that
+   shrinks the image and grows it back, with shortcuts between
+   matching sizes) instead of a transformer. FLUX's 12 billion
+   parameters alone are 48 GB in f32.
+
+So the natural endpoint, matching tiny-llm-in-rust's SmolLM, is level
+1: DiT-XL/2 and its decoder, ImageNet images by class, drawn with this
+project's guidance. For text, the counterpart is MDLM, which needs
+rotary position embeddings (positions built into attention as
+rotations, as SmolLM's are) and the GPT-2 tokenizer.
+
 ## Decisions
 
 Settled before stage 2, each with its reason; new questions get added
@@ -2497,6 +2590,11 @@ first.
   [arXiv:2406.07524](https://arxiv.org/abs/2406.07524).
 - Nie, S., et al. (2025). "Large Language Diffusion Models."
   [arXiv:2502.09992](https://arxiv.org/abs/2502.09992). LLaDA.
+- Rombach, R., Blattmann, A., Lorenz, D., Esser, P., & Ommer, B. (2022).
+  "High-Resolution Image Synthesis with Latent Diffusion Models." CVPR
+  (Conference on Computer Vision and Pattern Recognition).
+  [arXiv:2112.10752](https://arxiv.org/abs/2112.10752). Latent diffusion,
+  Stable Diffusion's design.
 - Gong, S., et al. (2025). "Scaling Diffusion Language Models via
   Adaptation from Autoregressive Models." ICLR.
   [arXiv:2410.17891](https://arxiv.org/abs/2410.17891). DiffuLLaMA.
