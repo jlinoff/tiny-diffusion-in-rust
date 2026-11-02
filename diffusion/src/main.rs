@@ -348,6 +348,11 @@ enum Command {
         /// validation loss is reported in place of the diffusion bound).
         #[arg(long)]
         next_token: bool,
+        /// Rotary positions (RoPE) in place of the learned position table:
+        /// each query and key rotated by its position, so attention sees
+        /// the distance between two tokens from the first step.
+        #[arg(long)]
+        rope: bool,
         /// The share of the tokens held out, at the end, as tiny-llm-in-rust.
         #[arg(long, default_value_t = 0.05)]
         valid_fraction: f64,
@@ -1027,6 +1032,7 @@ fn run(command: Command) -> Result<(), String> {
             seed,
             t_min,
             next_token,
+            rope,
             valid_fraction,
             valid_windows,
             draws,
@@ -1054,6 +1060,7 @@ fn run(command: Command) -> Result<(), String> {
                 heads,
                 context,
                 ffn,
+                rope,
             };
             let tc = TextTraining {
                 steps,
@@ -1083,6 +1090,9 @@ fn run(command: Command) -> Result<(), String> {
             );
             if next_token {
                 println!("  causal attention, each position predicting the next token, no masking");
+            }
+            if rope {
+                println!("  rotary positions (RoPE), no position table");
             }
             if t_min > 0.0 {
                 println!(

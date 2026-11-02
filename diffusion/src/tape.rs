@@ -65,6 +65,10 @@ enum Op<T> {
     },
     /// C = SiLU(A) = A ⊙ sigmoid(A), element by element (DiT's nonlinearity)
     Silu(Var),
+    /// Rotary positions (RoPE): within each head, the column pairs
+    /// (2i, 2i + 1) of row r rotated by the angle p·θᵢ, where p = r mod seq
+    /// is the row's position and θᵢ = 10000^(−2i/h) for heads of width h.
+    Rope { a: Var, seq: usize, heads: usize },
     /// C = columns start … start + len − 1 of A (splitting adaLN's outputs)
     SliceCols { a: Var, start: usize },
     /// Per-example scale and shift (adaLN): row r of X belongs to example
@@ -93,6 +97,36 @@ enum Op<T> {
     /// into a single number.
     #[allow(dead_code)]
     WeightedSum(Var, Mat<T>),
+}
+
+/// RoPE's rotation of every row (see Op::Rope); `back` rotates the other
+/// way, by −p·θᵢ.
+fn rotate<T: Float>(m: &Mat<T>, seq: usize, heads: usize, back: bool) -> Mat<T> {
+    let h = m.cols / heads;
+    // (sin, cos) of p·θᵢ for every position p and pair i, computed once.
+    let table: Vec<(T, T)> = (0..seq)
+        .flat_map(|p| {
+            (0..h / 2).map(move |i| {
+                let theta = p as f64 * 10000f64.powf(-2.0 * i as f64 / h as f64);
+                let (sin, cos) = theta.sin_cos();
+                (T::from_f64(if back { -sin } else { sin }), T::from_f64(cos))
+            })
+        })
+        .collect();
+    let mut out = m.clone();
+    for r in 0..m.rows {
+        let angles = &table[(r % seq) * (h / 2)..(r % seq + 1) * (h / 2)];
+        let row = out.row_mut(r);
+        for k in 0..heads {
+            for (i, &(s, c)) in angles.iter().enumerate() {
+                let j = k * h + 2 * i;
+                let (x0, x1) = (row[j], row[j + 1]);
+                row[j] = x0 * c - x1 * s;
+                row[j + 1] = x0 * s + x1 * c;
+            }
+        }
+    }
+    out
 }
 
 struct Node<T> {
@@ -389,6 +423,21 @@ impl<T: Float> Tape<T> {
     pub fn silu(&mut self, a: Var) -> Var {
         let v = self.value(a).map(|x| x * sigmoid(x));
         self.push(v, Op::Silu(a))
+    }
+
+    /// Rotary position embedding (RoPE; Su et al. 2021) of queries or keys,
+    /// (B·T) × d with `heads` heads side by side. Rotating both by their
+    /// positions makes each query·key product depend on the two positions
+    /// only through their distance.
+    pub fn rope(&mut self, a: Var, seq: usize, heads: usize) -> Var {
+        let am = self.value(a);
+        assert!(am.rows.is_multiple_of(seq), "whole sequences");
+        assert!(
+            am.cols.is_multiple_of(heads) && (am.cols / heads).is_multiple_of(2),
+            "heads of even width"
+        );
+        let v = rotate(am, seq, heads, false);
+        self.push(v, Op::Rope { a, seq, heads })
     }
 
     /// Columns start … start + len − 1 of a.
@@ -705,6 +754,8 @@ impl<T: Float> Tape<T> {
                     d * s * (T::one() + x * (T::one() - s))
                 }),
             )],
+            // A rotation's inverse is its transpose: rotate dC back by −p·θᵢ.
+            Op::Rope { a, seq, heads } => vec![(*a, rotate(g, *seq, *heads, true))],
             // The slice's gradient goes back to its columns; the rest get 0.
             Op::SliceCols { a, start } => {
                 let am = val(*a);
@@ -867,6 +918,40 @@ mod tests {
             reduce(t, y)
         });
         assert!(e < TOL, "{e}");
+    }
+
+    #[test]
+    fn rope_gradient() {
+        let e = check(&[rand(6, 8, 1)], |t, v| {
+            let r = t.rope(v[0], 3, 2);
+            reduce(t, r)
+        });
+        assert!(e < TOL, "{e}");
+    }
+
+    /// RoPE keeps each row's length, leaves position 0 alone, and makes a
+    /// query·key product depend only on the distance between positions.
+    #[test]
+    fn rope_is_relative() {
+        let (seq, d) = (10, 8);
+        let x = rand(1, d, 3);
+        let y = rand(1, d, 4);
+        // Every position holds the same query x (as the keys hold y).
+        let tile =
+            |m: &Mat<f64>| Mat::from_vec(seq, d, (0..seq).flat_map(|_| m.data.clone()).collect());
+        let mut t = Tape::<f64>::new();
+        let (qx, ky) = (t.leaf(tile(&x)), t.leaf(tile(&y)));
+        let (q, k) = (t.rope(qx, seq, 2), t.rope(ky, seq, 2));
+        let (q, k) = (t.value(q).clone(), t.value(k).clone());
+        let dot =
+            |m: usize, n: usize| -> f64 { q.row(m).iter().zip(k.row(n)).map(|(a, b)| a * b).sum() };
+        let norm = |r: &[f64]| r.iter().map(|a| a * a).sum::<f64>().sqrt();
+        assert!((norm(q.row(7)) - norm(&x.data)).abs() < 1e-12);
+        assert_eq!(q.row(0), &x.data[..]);
+        for (m, n) in [(5, 2), (9, 6), (3, 0)] {
+            assert!((dot(m, n) - dot(m - n, 0)).abs() < 1e-12);
+        }
+        assert!((dot(5, 2) - dot(2, 5)).abs() > 1e-3, "direction matters");
     }
 
     #[test]

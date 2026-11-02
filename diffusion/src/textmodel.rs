@@ -3,7 +3,9 @@
 //! more token, MASK, trained to recover masked tokens.
 //!
 //! ```text
-//! x = token row + position row                      (one row per position)
+//! x = token row + position row                      (one row per position;
+//!                                                    with RoPE, no position row:
+//!                                                    queries and keys rotated)
 //! each block:  x += Proj(Attention(LN(x)))          (every position sees all)
 //!              x += W₂·GELU(W₁·LN(x))
 //! logits = LN(x) · token tableᵀ                     (tied, over the V real tokens)
@@ -32,6 +34,9 @@ pub struct TextConfig {
     pub context: usize,
     /// The feed-forward network's inner width.
     pub ffn: usize,
+    /// Rotary positions (RoPE) in place of the learned position table:
+    /// queries and keys rotated by their positions in every block.
+    pub rope: bool,
 }
 
 impl TextConfig {
@@ -42,10 +47,10 @@ impl TextConfig {
     /// Every weight's name and shape, in order.
     pub fn layout(&self) -> Vec<(String, usize, usize)> {
         let (d, f) = (self.width, self.ffn);
-        let mut v = vec![
-            ("tok".to_string(), self.vocab + 1, d),
-            ("pos".to_string(), self.context, d),
-        ];
+        let mut v = vec![("tok".to_string(), self.vocab + 1, d)];
+        if !self.rope {
+            v.push(("pos".to_string(), self.context, d));
+        }
         for l in 0..self.blocks {
             for (n, r, c) in [
                 ("ln1.g", 1, d),
@@ -67,6 +72,16 @@ impl TextConfig {
         v.push(("final.g".into(), 1, d));
         v.push(("final.b".into(), 1, d));
         v
+    }
+
+    /// Where the blocks' weights start in the layout: after the token
+    /// table, and the position table if there is one.
+    fn first_block(&self) -> usize {
+        if self.rope {
+            1
+        } else {
+            2
+        }
     }
 
     pub fn parameters(&self) -> usize {
@@ -158,20 +173,27 @@ impl<T: Float> TextModel<T> {
             let z = tape.matmul(x, p[w]);
             tape.add_row(z, p[w + 1])
         };
-        let tok = tape.gather(p[0], ids);
-        let positions: Vec<usize> = (0..batch).flat_map(|_| 0..seq).collect();
-        let pos = tape.gather(p[1], &positions);
-        let mut x = tape.add(tok, pos);
+        let mut x = tape.gather(p[0], ids);
+        if !c.rope {
+            let positions: Vec<usize> = (0..batch).flat_map(|_| 0..seq).collect();
+            let pos = tape.gather(p[1], &positions);
+            x = tape.add(x, pos);
+        }
         let d = c.width;
+        let first = c.first_block();
         for l in 0..c.blocks {
-            let w = 2 + 12 * l;
+            let w = first + 12 * l;
             let n = tape.layer_norm(x, p[w], p[w + 1]);
             let qkv = lin(tape, n, w + 2);
-            let (q, k, v) = (
+            let (mut q, mut k, v) = (
                 tape.slice_cols(qkv, 0, d),
                 tape.slice_cols(qkv, d, d),
                 tape.slice_cols(qkv, 2 * d, d),
             );
+            if c.rope {
+                q = tape.rope(q, seq, c.heads);
+                k = tape.rope(k, seq, c.heads);
+            }
             let a = if causal {
                 tape.attention(q, k, v, seq, c.heads)
             } else {
@@ -185,7 +207,7 @@ impl<T: Float> TextModel<T> {
             let f = lin(tape, f, w + 10);
             x = tape.add(x, f);
         }
-        let last = 2 + 12 * c.blocks;
+        let last = first + 12 * c.blocks;
         let h = tape.layer_norm(x, p[last], p[last + 1]);
         // The output is tied to the token table, its V real rows.
         let real: Vec<usize> = (0..c.vocab).collect();
@@ -213,6 +235,9 @@ impl TextModel<f32> {
             ("ffn", c.ffn),
         ] {
             metadata.insert(k.into(), v.to_string());
+        }
+        if c.rope {
+            metadata.insert("rope".into(), "1".into());
         }
         metadata.insert("kind".into(), "masked-text".into());
         let tensors = c
@@ -242,6 +267,7 @@ impl TextModel<f32> {
             heads: num("heads")?,
             context: num("context")?,
             ffn: num("ffn")?,
+            rope: f.metadata.get("rope").is_some_and(|v| v == "1"),
         };
         let mut params = Vec::new();
         for (name, r, c) in cfg.layout() {
@@ -547,6 +573,7 @@ mod tests {
             heads: 2,
             context: 6,
             ffn: 12,
+            rope: false,
         }
     }
 
@@ -561,6 +588,7 @@ mod tests {
             heads: 4,
             context: 256,
             ffn: 512,
+            rope: false,
         };
         assert_eq!(c.parameters(), 1_350_528);
         let (v, d, l, t, f) = (4097, 128, 4, 256, 512);
@@ -589,7 +617,13 @@ mod tests {
 
     #[test]
     fn gradients_match_finite_differences() {
-        let mut m = TextModel::<f64>::new(small(), 2);
+        for rope in [false, true] {
+            gradients_with(TextConfig { rope, ..small() });
+        }
+    }
+
+    fn gradients_with(cfg: TextConfig) {
+        let mut m = TextModel::<f64>::new(cfg, 2);
         let mut rng = Rng::new(3);
         for p in m.params.iter_mut() {
             for x in p.data.iter_mut() {
@@ -627,7 +661,50 @@ mod tests {
                 worst = worst.max((numeric - a).abs() / (numeric.abs() + a.abs() + 1e-3));
             }
         }
-        assert!(worst < 1e-6, "{worst}");
+        assert!(worst < 1e-6, "rope {}: {worst}", cfg.rope);
+    }
+
+    /// With RoPE there is no position table (1,350,528 − 256 × 128), yet
+    /// the model still knows order: swapping the first two tokens changes
+    /// the third position's prediction. Without positions of either kind,
+    /// attention can't tell the two inputs apart there.
+    #[test]
+    fn rope_knows_order() {
+        let c = TextConfig {
+            vocab: 4096,
+            width: 128,
+            blocks: 4,
+            heads: 4,
+            context: 256,
+            ffn: 512,
+            rope: true,
+        };
+        assert_eq!(c.parameters(), 1_350_528 - 256 * 128);
+        assert!(!c.layout().iter().any(|(n, _, _)| n == "pos"));
+        // Larger weights than at the start, where attention is nearly
+        // uniform and every difference small.
+        let mut m = TextModel::<f32>::new(
+            TextConfig {
+                rope: true,
+                ..small()
+            },
+            4,
+        );
+        let mut rng = Rng::new(5);
+        for x in m.params.iter_mut().flat_map(|p| p.data.iter_mut()) {
+            *x += 0.3 * rng.normal() as f32;
+        }
+        let a = m.logits(&[1, 2, 3, 4, 5, 6], 1);
+        let b = m.logits(&[2, 1, 3, 4, 5, 6], 1);
+        let gap: f32 = a
+            .row(2)
+            .iter()
+            .zip(b.row(2))
+            .map(|(x, y)| (x - y).abs())
+            .sum();
+        assert!(gap > 0.1, "{gap}");
+        let back = TextModel::from_file(&m.to_file(BTreeMap::new())).unwrap();
+        assert_eq!((back.cfg, &back.params), (m.cfg, &m.params));
     }
 
     /// Bidirectional: changing a later token changes an earlier position's
@@ -670,6 +747,7 @@ mod tests {
             heads: 2,
             context: 32,
             ffn: 8,
+            rope: false,
         };
         let mut m = TextModel::<f32>::new(c, 6);
         for x in m.params[0].data[..50 * 8].iter_mut() {
@@ -720,6 +798,7 @@ mod tests {
             heads: 2,
             context: 32,
             ffn: 32,
+            rope: false,
         };
         let mut m = TextModel::new(cfg, 1);
         let tc = TextTraining {
@@ -762,6 +841,7 @@ mod tests {
             heads: 2,
             context: 16,
             ffn: 32,
+            rope: false,
         };
         let mut m = TextModel::new(cfg, 1);
         let windows: Vec<&[u32]> = c.ids.chunks_exact(17).take(20).collect();

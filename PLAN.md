@@ -2475,6 +2475,70 @@ the same lesson has to come through attention, from a neighbour the
 model must first learn to find, with learned positions, among every
 position in the window.
 
+**The fix to try: rotary positions.** RoPE (rotary position embedding,
+Su et al. 2021) drops the position table. Instead, in every block, each
+query and each key is rotated by an angle proportional to its position:
+within each head, column pairs (2i, 2i + 1) turn by p·θᵢ, where p is
+the position and θᵢ = 10000^(−2i/h) for a head of width h, so the first
+pairs turn quickly and the last slowly. A rotated query at position m
+and a rotated key at position n have a product that depends on m and n
+only through m − n. "Look at the token just before me" is then a single
+pattern, the same at every position, that the query and key weights can
+learn once. With a position table it has to be learned 256 times over,
+once for each position. Production masked text models (MDLM, LLaDA)
+and almost every recent language model use RoPE.
+`train-text --rope` switches it on. The rest of the model is unchanged,
+except that it has no position table (32,768 fewer parameters:
+1,317,760). Tests: the rotation's gradient against finite differences;
+the products depend only on distance, and rows keep their length; the
+model's gradients with RoPE; it still knows order, since swapping two
+tokens changes a third position's prediction, which without positions
+of either kind it couldn't; files remember it.
+
+Predictions, written before any run with RoPE. Each assumes the plateau
+comes from finding neighbours with learned positions, as above:
+
+1. Synthetic text, 50 tokens, 256 positions, at most 30% masked (stuck
+   at 2.91 with the position table): leaves the unigram level, under
+   2.0 by step 600.
+2. Synthetic text, 4,096 tokens, 64 positions, at most 30% masked
+   (stuck at 4.79 for 400 steps): under 4.5 by step 400. Less sure:
+   4,096 pairings must still be learned, each from few examples.
+3. TinyStories, `make text`'s settings plus `--rope` (256 positions,
+   full masking, 2,000 steps): the training loss leaves the plateau
+   and ends under 5.0, and the diffusion bound ends between 4.0 and
+   5.0, that is, 25% to 55% above tiny-llm-in-rust's 3.23. Not near
+   the control's 3.53: even with positions solved, a masked position
+   sees no token of its own, and a heavily masked window gives little
+   to go on, so the masked loss stays above the next-token loss on the
+   same budget. MDLM, at a hundred times this size, still trails a
+   matched next-token model.
+
+**Prediction 1: right.** With RoPE, the 50-token synthetic text at 256
+positions left the unigram level by step 200:
+
+| Step | 100 | 200 | 300 | 600 |
+|---|---|---|---|---|
+| Position table | 3.05 | | 2.93 | 2.91 |
+| RoPE | 2.81 | 1.62 | 1.42 | 1.25 |
+
+(Diffusion bound 1.79, though this model was trained with at most 30%
+masked.)
+
+**Prediction 2: right, by far more than predicted.** The 4,096-token
+synthetic text at 64 positions, where the position table sat at the
+unigram level (4.775):
+
+| Step | 50 | 100 | 200 | 300 | 400 |
+|---|---|---|---|---|---|
+| Position table | 6.79 | 4.89 | 4.78 | 4.84 | 4.79 |
+| RoPE | 6.78 | 4.35 | 3.03 | 2.85 | 2.70 |
+
+(Predicted under 4.5 by step 400.) So the large vocabulary wasn't what
+held that model either: it was finding the neighbour. Learning 4,096
+pairings, once the model can find the token before, took only a few
+hundred steps.
+
 ## How far could this go?
 
 tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
@@ -2749,6 +2813,8 @@ first.
 - Xiao, H., Rasul, K., & Vollgraf, R. (2017). "Fashion-MNIST: a Novel Image
   Dataset for Benchmarking Machine Learning Algorithms."
   [arXiv:1708.07747](https://arxiv.org/abs/1708.07747).
+- Su, J., et al. (2021). "RoFormer: Enhanced Transformer with Rotary
+  Position Embedding." arXiv:2104.09864. Rotary positions (RoPE).
 - Sahoo, S. S., et al. (2024). "Simple and Effective Masked Diffusion
   Language Models." NeurIPS.
   [arXiv:2406.07524](https://arxiv.org/abs/2406.07524).
