@@ -71,6 +71,10 @@ names are explained where they first appear.
   - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
+  - [What it adds](#what-it-adds-2)
+  - [How it will be tested](#how-it-will-be-tested-2)
+  - [Predictions](#predictions-4)
+  - [Running it (planned)](#running-it-planned)
 - [Decisions](#decisions)
 - [Where things live](#where-things-live)
 - [Bibliography](#bibliography)
@@ -1938,9 +1942,11 @@ static, and the point where the two projects meet: a diffusion language
 model compared with tiny-llm-in-rust's, at the same size and on the same
 stories.
 
-Optional, like stage 5. This section was written early, as an
-explanation, and the stage itself will be planned in detail when it
-starts.
+Optional, like stage 5. Its first two parts, how text diffusion works
+and how it compares with tiny-llm-in-rust's model, were written early,
+as an explanation, and are kept as written; the plan, tests and
+predictions that follow them were written when the stage began, before
+any code.
 
 Diffusion isn't only for images. This section describes how it works on
 text, then compares it with the language model of tiny-llm-in-rust, which
@@ -2035,6 +2041,141 @@ record before running:
   every step, which may help with consistency, but settles tokens in
   parallel, which may let two tokens settled in the same step contradict
   each other, since neither sees the other's choice.
+
+### What it adds
+
+A masked diffusion language model, as described above, built to be
+compared with tiny-llm-in-rust's on equal terms.
+
+- **The same data, read from tiny-llm-in-rust.** Its tokenizer
+  (`out/tok.bpe`, V = 4,096 tokens) and its encoded corpus
+  (`out/corpus.ids`: TinyStories' validation file, 19 MB of stories, as
+  token IDs), from its folder (`LLM_OUT`, by default
+  `../tiny-llm-in-rust/out`). The last 5% of the tokens are held out, as
+  tiny-llm-in-rust holds them out, so the two models are judged on the
+  same text. The tokenizer's decoding is copied from tiny-llm-in-rust
+  (the file says so), so samples can be read; nothing here encodes text.
+- **The same network, but bidirectional.** tiny-llm-in-rust's
+  development model, the same shape (d = 128, 4 blocks, 4 heads, a
+  context of 256 tokens, feed-forward width 512, learned positions,
+  output tied to the token table), with two changes: attention without
+  the causal mask, and one more token, MASK. So tiny-llm-in-rust's
+  1,350,400 parameters (its PLAN.md's count for V = 4,096 and a context
+  of 256) plus MASK's row of 128, 1,350,528: the same size to within
+  0.01%. No time input:
+  how much of the sequence is masked already tells the model how far
+  along it is (as in LLaDA).
+- **The same training budget.** The same windows of 256 tokens, the same
+  2,000 steps of 8 windows, 4.1 million tokens, the same learning-rate
+  schedule. Each step draws t for each window, masks each token with
+  probability 1 − t, and scores the predictions at the masked positions
+  only (cross-entropy, defined in tiny-llm-in-rust).
+- **A loss that compares with tiny-llm-in-rust's.** An autoregressive
+  model's validation loss is the average, over held-out tokens, of
+  −log p(token | the tokens before it): the information per token, in
+  nats (the unit of log base e). A masked diffusion model has no single
+  order to factor a text in, but its training gives an upper bound on
+  the same quantity (Sahoo et al. 2024): with this schedule, the
+  average over t of the masked positions' cross-entropy summed, divided
+  by 1 − t, per token. The **diffusion bound** is estimated on the held-
+  out tokens by drawing many values of t. It is a bound, not an exact
+  loss, so it can only overstate the diffusion model's loss.
+- **Generation by unmasking.** From a sequence of 256 MASKs, S steps:
+  at each, the model predicts every masked position, a token is drawn
+  at each (with tiny-llm-in-rust's temperature 0.8 and top-k 40), and
+  the most confident of them are kept, as many as the step's share of
+  the 256; the rest are masked again. The order in which positions are
+  settled is recorded.
+- **Infilling**, to show what an autoregressive model can't do simply:
+  a held-out story with its middle masked, filled in from both sides.
+- **Measures of the text**, in `tools/text_stats.py`, for any text file,
+  so real stories, tiny-llm-in-rust's samples and this model's are
+  measured alike: the **repetition rate**, the fraction of words that
+  repeat the word just before them ("the the"), and **distinct-2**, the
+  fraction of different two-word pairs among all of them, a measure of
+  variety.
+
+### How it will be tested
+
+- the token file and the held-out split: the same counts and the same
+  boundary as tiny-llm-in-rust's, on a fixture;
+- decoding: a fixture tokenizer and its texts, as in tiny-llm-in-rust;
+- the model: gradients against finite differences, the parameter count
+  against its formula, and **bidirectionality**: changing a later token
+  changes an earlier position's prediction (it couldn't, with the causal
+  mask);
+- masking: the masked share for a given t, over many draws; the loss
+  scores only masked positions;
+- **the diffusion bound against a case worked by hand**: a "model" that
+  knows every token gets 0, and one that predicts every token with
+  probability 1/V gets exactly log V;
+- generation: after S steps nothing is masked; a prompt's or an
+  infill's unmasked tokens are never changed; every position is settled
+  exactly once;
+- `text_stats.py`: repetition and distinct-2 on texts worked by hand.
+- a golden loss for text training, as for the images.
+
+### Predictions
+
+Written before any code. Each gives its mechanism and a numeric check.
+
+1. **Training costs about what tiny-llm-in-rust's does.** Within a
+   factor of 1.5 of its 15,000 tokens per second on the M4. Mechanism:
+   the same arithmetic per token (about 6 per parameter: 2 forward, 4
+   backward), and dropping the causal mask doesn't change it; the tape
+   is a copy of tiny-llm-in-rust's. Check: 2,000 steps of 2,048 tokens
+   at 15,000 per second is under 5 minutes.
+2. **The diffusion bound is 10 to 30% above tiny-llm-in-rust's
+   validation loss**, at the same size, data and number of tokens.
+   Mechanism: each window teaches only its masked positions, half of
+   them on average, so the model sees about half the training signal;
+   many of its predictions are made with most of the context hidden,
+   which no autoregressive prediction faces; and the bound overstates
+   the loss. Check: tiny-llm-in-rust's own validation loss at step 1,000,
+   from its training log, against its loss at 2,000, is the price of
+   half the signal; the gap should be at least that, plus the bound's
+   looseness.
+3. **On the M4, at this size, diffusion generates more slowly, not
+   faster.** About 45,000/S tokens per second for S steps, so at 64
+   steps 400 to 1,000 tokens per second against tiny-llm-in-rust's
+   2,300; faster only below about 20 steps. Mechanism: the early note
+   above expected diffusion to be faster because large models are
+   limited by memory bandwidth, every token reading every weight. A
+   model of 1.35 million parameters (5 MB) isn't: its weights stay in the
+   M4's caches, and tiny-llm-in-rust found its generation limited by
+   per-operation overhead instead (2,300 tokens per second, no faster on
+   the M4 than on a 2-core machine). A diffusion pass processes all 256
+   positions, about as much arithmetic as 256 autoregressive tokens.
+   Check: tiny-llm-in-rust's training throughput, 15,000 tokens per
+   second forward and backward, is about 45,000 forward only; a 256-token
+   pass then takes about 5.7 ms, and S of them 256/(S × 0.0057) tokens
+   per second. This replaces the early note's prediction (kept above as
+   written): the arithmetic, done now, says the opposite for this size.
+4. **Fewer steps, more repetition.** The repetition rate rises as S
+   falls: at 256 steps (one token settled per step) within 1.5 times
+   real text's, at 16 steps (16 per step) at least twice real text's.
+   Mechanism: the tokens settled in the same step are drawn
+   independently, none seeing the others' choice, so neighbours that
+   each find "the" likely can both become "the". Check: with 16 tokens
+   per step, most positions settle in the same step as a neighbour; with
+   one, none do.
+5. **Easy tokens first.** The first tokens to be settled are mostly
+   frequent ones (full stops, "the", "and", the end-of-story token at the
+   end), the last rare ones: the tokens settled in the first tenth of
+   the steps have a median frequency rank in the corpus at least 5 times
+   better than those settled in the last tenth. Mechanism: generation
+   keeps the most confident predictions first, and a prediction is most
+   confident where the answer barely depends on context. Check: the 20
+   most frequent tokens make up a large share of all tokens (measured
+   from the corpus when built); confidence-ordered settling should drain
+   them first.
+
+### Running it (planned)
+
+| Command | What it does |
+|---|---|
+| `make text` | trains the masked diffusion model on tiny-llm-in-rust's corpus (minutes) and reports the diffusion bound beside tiny-llm-in-rust's validation loss |
+| `make text-sample` | stories at 16, 64 and 256 steps, the order of settling, an infilled story, the speed of each, and the text measures beside real stories' and tiny-llm-in-rust's |
 
 ## Decisions
 
