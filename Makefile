@@ -168,6 +168,22 @@ guidance: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Measure GUIDE_MODEL at
 			--png $(OUT)/$(basename $(notdir $(GUIDE_MODEL)))-w$$w.png || exit 1; \
 	done
 
+# Stage 5, looking inside (PLAN.md): the probes on stage 3's model without
+# labels and stage 4's with them, 4 x 4 patches both; tables on the
+# terminal, and out/inside-<model>-preview.png and -attention.png.
+INSIDE_MODELS ?= digits digits-cond-p4
+
+.PHONY: inside
+inside: $(OUT)/classifier.safetensors | $(DIFFUSION) ## Stage 5: look inside the trained models (INSIDE_MODELS): a few minutes.
+	@for m in $(INSIDE_MODELS); do \
+		test -f $(OUT)/$$m.safetensors || { echo "no $(OUT)/$$m.safetensors: train it first (make $$m)"; exit 1; }; \
+	done
+	for m in $(INSIDE_MODELS); do \
+		printf "\n\033[35;1m== inside %s ==\033[0m\n" $$m; \
+		$(DIFFUSION) inside --model $(OUT)/$$m.safetensors --classifier $< \
+			--preview $(OUT)/inside-$$m-preview.png --attention $(OUT)/inside-$$m-attention.png || exit 1; \
+	done
+
 .PHONY: classifier measure-stage3
 classifier: $(OUT)/classifier.safetensors ## Train the digit classifier, stage 4's measuring instrument: a minute or two.
 
@@ -234,7 +250,7 @@ clean: ## Remove generated files (keeps data/).
 # value now. A variable meant to be set from the command line gets a line
 # here and a HELP_ description.
 HELP_VARS := OUT CARGO_FEATURES TRAIN2D_ARGS IMG_ARGS SHAPES_ARGS PEEK_MODEL \
-	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE URL_mnist URL_fashion
+	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS URL_mnist URL_fashion
 HELP_OUT             := where models, plots and images are written
 HELP_CARGO_FEATURES  := blas: Apple Accelerate for large matrix products (default on macOS); empty: plain Rust
 HELP_TRAIN2D_ARGS    := options for train2d, the stage 2 models (diffusion train2d --help)
@@ -244,6 +260,7 @@ HELP_PEEK_MODEL      := the running model make peek samples from
 HELP_CLASSIFIER_ARGS := options for the classifier (diffusion classifier --help)
 HELP_GUIDE_MODEL     := the labelled model make guidance measures
 HELP_GUIDANCE        := the guidance scales make guidance measures and draws
+HELP_INSIDE_MODELS   := the models make inside looks into (names in out/, without .safetensors)
 HELP_URL_mnist       := where MNIST is downloaded from
 HELP_URL_fashion     := where Fashion-MNIST is downloaded from
 

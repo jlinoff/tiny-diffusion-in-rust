@@ -43,6 +43,10 @@ step "measure with guidance"
 $D measure --model "$T/cond.safetensors" --classifier "$T/clf.safetensors" --n 12 --steps 4 --guidance 0,1,3
 step "style"
 $D style --model "$T/cond.safetensors" --n 4 --steps 4
+step "inside"
+$D inside --model "$T/img.safetensors" --classifier "$T/clf.safetensors" --n 6 --steps 4 \
+    --preview "$T/prev.png" --attention "$T/att.png"
+$D inside --model "$T/cond.safetensors" --classifier "$T/clf.safetensors" --n 6 --steps 4 > /dev/null
 python3 -c 'import sys; sys.exit(open(sys.argv[1], "rb").read(8) != b"\x89PNG\r\n\x1a\n")' "$T/img.png"
 grep -q '<circle' "$T/m-flow.svg"
 printf '\nEvery command ran.\n'

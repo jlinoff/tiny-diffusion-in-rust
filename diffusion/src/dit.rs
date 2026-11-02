@@ -167,6 +167,20 @@ impl<T: Float> Dit<T> {
         t: &[f32],
         labels: &[usize],
     ) -> (Var, Vec<Var>) {
+        self.forward_recorded(tape, patches, t, labels, None)
+    }
+
+    /// The same, also recording each block's attention queries, keys,
+    /// values and output (before the projection), for looking inside
+    /// (stage 5).
+    pub fn forward_recorded(
+        &self,
+        tape: &mut Tape<T>,
+        patches: Mat<T>,
+        t: &[f32],
+        labels: &[usize],
+        mut record: Option<&mut Vec<[Var; 4]>>,
+    ) -> (Var, Vec<Var>) {
         let c = self.cfg;
         let (d, seq, b) = (c.width, c.tokens(), t.len());
         assert_eq!(patches.rows, b * seq, "one time per image");
@@ -223,6 +237,9 @@ impl<T: Float> Dit<T> {
                 tape.slice_cols(qkv, 2 * d, d),
             );
             let a = tape.attention_full(q, k, v, seq, c.heads);
+            if let Some(r) = record.as_deref_mut() {
+                r.push([q, k, v, a]);
+            }
             let a = lin(tape, a, w + 4);
             let a = tape.gate(a, g1, seq);
             x = tape.add(x, a);
@@ -264,6 +281,69 @@ impl Dit<f32> {
             labels,
         );
         unpatchify(tape.value(out), self.cfg.image, self.cfg.patch)
+    }
+
+    /// The attention weights of every block and head for images x at time
+    /// t: `[block][image][head]`, each a T × T matrix whose row i holds how
+    /// much patch i attends to each patch (rows sum to 1). Also returns,
+    /// per block, the recorded values and attention output, for checking
+    /// the weights against what the model computed.
+    #[allow(clippy::type_complexity)]
+    pub fn attention_weights(
+        &self,
+        x: &Mat<f32>,
+        t: f32,
+        labels: &[usize],
+    ) -> (Vec<Vec<Vec<Mat<f32>>>>, Vec<(Mat<f32>, Mat<f32>)>) {
+        let c = self.cfg;
+        let (seq, heads, d) = (c.tokens(), c.heads, c.width);
+        let hs = d / heads;
+        let mut tape = Tape::new();
+        let mut rec = Vec::new();
+        self.forward_recorded(
+            &mut tape,
+            patchify(x, c.image, c.patch),
+            &vec![t; x.rows],
+            labels,
+            Some(&mut rec),
+        );
+        let scale = 1.0 / (hs as f32).sqrt();
+        let mut all = Vec::new();
+        let mut checks = Vec::new();
+        for [q, k, v, a] in rec {
+            let (qm, km) = (tape.value(q), tape.value(k));
+            let mut per_image = Vec::new();
+            for b in 0..x.rows {
+                let mut per_head = Vec::new();
+                for h in 0..heads {
+                    let mut w = Mat::zeros(seq, seq);
+                    for i in 0..seq {
+                        let qi = &qm.row(b * seq + i)[h * hs..(h + 1) * hs];
+                        let mut max = f32::NEG_INFINITY;
+                        for j in 0..seq {
+                            let kj = &km.row(b * seq + j)[h * hs..(h + 1) * hs];
+                            let s: f32 = qi.iter().zip(kj).map(|(a, b)| a * b).sum::<f32>() * scale;
+                            w.data[i * seq + j] = s;
+                            max = max.max(s);
+                        }
+                        let row = &mut w.data[i * seq..(i + 1) * seq];
+                        let mut total = 0.0;
+                        for s in row.iter_mut() {
+                            *s = (*s - max).exp();
+                            total += *s;
+                        }
+                        for s in row.iter_mut() {
+                            *s /= total;
+                        }
+                    }
+                    per_head.push(w);
+                }
+                per_image.push(per_head);
+            }
+            all.push(per_image);
+            checks.push((tape.value(v).clone(), tape.value(a).clone()));
+        }
+        (all, checks)
     }
 
     /// Classifier-free guidance: v_uncond + w·(v_cond − v_uncond), both
@@ -576,6 +656,36 @@ mod tests {
             let g = m.predict_guided(&x, 0.6, &ys, w);
             for ((a, u), c) in g.data.iter().zip(&vu.data).zip(&vc.data) {
                 assert!((a - (u + w * (c - u))).abs() < 1e-4, "w = {w}");
+            }
+        }
+    }
+
+    /// The recorded attention weights are probabilities, and the weights
+    /// times the values reproduce the attention output the model computed.
+    #[test]
+    fn recorded_attention_reproduces_the_output() {
+        let m = labelled(13);
+        let mut rng = Rng::new(14);
+        let x = Mat::from_vec(2, 64, (0..128).map(|_| rng.normal() as f32).collect());
+        let (w, checks) = m.attention_weights(&x, 0.4, &[1, 3]);
+        let c = m.cfg;
+        let (seq, hs) = (c.tokens(), c.width / c.heads);
+        assert_eq!((w.len(), w[0].len(), w[0][0].len()), (c.blocks, 2, c.heads));
+        for (blk, (v, a)) in w.iter().zip(&checks) {
+            for (b, heads) in blk.iter().enumerate() {
+                for (h, wm) in heads.iter().enumerate() {
+                    for i in 0..seq {
+                        let s: f32 = wm.row(i).iter().sum();
+                        assert!((s - 1.0).abs() < 1e-5);
+                        for col in 0..hs {
+                            let got: f32 = (0..seq)
+                                .map(|j| wm.data[i * seq + j] * v.row(b * seq + j)[h * hs + col])
+                                .sum();
+                            let want = a.row(b * seq + i)[h * hs + col];
+                            assert!((got - want).abs() < 1e-4, "{got} {want}");
+                        }
+                    }
+                }
             }
         }
     }

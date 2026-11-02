@@ -63,7 +63,8 @@ names are explained where they first appear.
   - [What it adds](#what-it-adds-1)
   - [How it will be tested](#how-it-will-be-tested-1)
   - [Predictions](#predictions-3)
-  - [Running it (planned)](#running-it-planned)
+  - [What was built](#what-was-built-2)
+  - [Running it](#running-it-3)
 - [Stage 6: text, later](#stage-6-text-later)
   - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
@@ -112,6 +113,15 @@ image, never a cross product.
   This project uses the convention of flow matching: t = 0 is pure noise,
   t = 1 is data. (DDPM, below, counts the other way: its t = 0 is data.)
 - **noise level**: how much noise an example carries; it's a function of t.
+- **an example is a point**: an example with n numbers is one point in a
+  space of n dimensions, one axis per number. A point in a plane has 2,
+  and its velocity is a 2-dimensional arrow (stage 2's figures); a
+  28 × 28 image has 784, so it is one point in 784 dimensions, and its
+  velocity has 784 components, one per pixel: how fast that pixel's
+  brightness is changing, and whether towards white or black. Nothing
+  moves across the image; strokes appear because the pixels along them
+  brighten while the background darkens. The whole image travels as one
+  point from the noise to the data, the moons picture in 784 dimensions.
 
 ### Two ways to train one
 
@@ -1641,7 +1651,10 @@ outside.
   It is the diffusion counterpart of tiny-llm-in-rust's logit lens,
   which read the model's guess of the next word from its middle layers.
   Shown as a **preview grid**, like the progress grid but with each
-  moment's guess in place of the noisy image; and measured by asking
+  moment's guess in place of the noisy image, and under each guess the
+  velocity itself as an image (grey for 0, white where a pixel is
+  brightening, black where it is darkening; see [Terms](#terms), an
+  example is a point); and measured by asking
   the classifier which digit each guess is, at every step, against the
   digit the generation ends as: the **commitment curve**, the fraction
   of generations already heading for their final digit at each t.
@@ -1730,11 +1743,41 @@ Written before any code. Each gives its mechanism and a numeric check.
    prediction most likely to be wrong, since nothing in stage 3 or 4
    measured attention.
 
-### Running it (planned)
+### What was built
+
+- `inside.rs`: the guess of the finished image, straightness and where
+  the bending lies, class means, the commitment curve, attention
+  distance, and velocities as images. Tested as planned: the guess
+  against stage 2's Gaussian closed form at several t, straight and
+  bent paths, class means and the commitment curve by hand, and
+  attention distance's baselines (3.609 and 2.008).
+- `dit.rs`: `attention_weights`, every block's and head's weights,
+  recomputed from the queries and keys the forward pass recorded.
+  Tested: rows sum to 1, and the weights times the values reproduce the
+  attention output the model computed.
+- `diffusion inside`: the four probes' tables, and the preview grid and
+  attention maps (`--preview`, `--attention`); `make inside` runs it on
+  `digits` and `digits-cond-p4` (`INSIDE_MODELS=` picks others).
+
+A trial on the small shapes model of stage 4's build showed one thing
+before the real run, recorded here because it bears on prediction 3.
+The velocity is the remaining way to the finished image divided by the
+time left, v = (x̂₁ − x_t)/(1 − t), so the difference between the
+conditional and unconditional velocities is the difference between
+their two guesses of the finished image divided by 1 − t. Near the end
+that division magnifies even a small disagreement: on the shapes model,
+the velocities' difference didn't fall at all, while the guesses'
+difference fell steadily to almost 0. So `inside` prints both: the
+velocities' difference, which prediction 3 is scored on, unchanged, and
+the guesses' difference, (1 − t) times it, which is how much guidance
+can still change the finished image. Prediction 3 stands as written;
+this note says, before the run, why it may fail.
+
+### Running it
 
 | Command | What it does |
 |---|---|
-| `make inside` | all four probes on `digits` and `digits-cond-p4`: the tables, the preview grids, guidance's push by t, and attention maps (a few minutes) |
+| `make inside` | all four probes on `digits` and `digits-cond-p4`: the tables, `out/inside-digits-preview.png`, `-attention.png` and the same for `digits-cond-p4` (a few minutes) |
 
 ## Stage 6: text, later
 

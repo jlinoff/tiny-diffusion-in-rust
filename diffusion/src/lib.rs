@@ -17,6 +17,7 @@ pub mod ddpm;
 pub mod dit;
 pub mod flow;
 pub mod image;
+pub mod inside;
 pub mod metrics;
 pub mod mlp;
 pub mod optim;

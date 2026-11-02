@@ -11,6 +11,8 @@
 //! Stage 4, conditioning: `classifier` trains the measuring instrument,
 //! `measure` uses it on a model's samples, and `style` asks whether the
 //! noise decides how a digit is written.
+//!
+//! Stage 5, looking inside: `inside` runs the probes of PLAN.md's stage 5.
 
 use clap::{Parser, Subcommand};
 use mini_diffusion::classify::{
@@ -271,6 +273,32 @@ enum Command {
         guidance: Vec<f32>,
         #[arg(long, default_value = "data")]
         data_dir: PathBuf,
+    },
+    /// Look inside a trained DiT (stage 5): its guess of the finished image
+    /// along the way, how far guidance pushes, how straight the paths are,
+    /// and how far attention reaches.
+    Inside {
+        #[arg(long)]
+        model: PathBuf,
+        #[arg(long)]
+        classifier: PathBuf,
+        /// Generations to probe.
+        #[arg(long, default_value_t = 200)]
+        n: usize,
+        #[arg(long, default_value_t = 50)]
+        steps: usize,
+        #[arg(long, default_value_t = 2)]
+        seed: u64,
+        #[arg(long, default_value = "data")]
+        data_dir: PathBuf,
+        /// Also: the preview grid, 8 generations at 9 moments, each as the
+        /// model's guess of the finished image above its velocity.
+        #[arg(long)]
+        preview: Option<PathBuf>,
+        /// Also: attention maps for the centre patch of one generation, one
+        /// row per block, one column per moment.
+        #[arg(long)]
+        attention: Option<PathBuf>,
     },
     /// For a model with labels: does the starting noise decide the style?
     /// Draws every class from the same noises and correlates slant,
@@ -866,6 +894,27 @@ fn run(command: Command) -> Result<(), String> {
             }
             Ok(())
         }
+        Command::Inside {
+            model,
+            classifier,
+            n,
+            steps,
+            seed,
+            data_dir,
+            preview,
+            attention,
+        } => {
+            let f = safetensors::read(&model)?;
+            let dit = Dit::from_file(&f).map_err(|e| format!("{}: {e}", model.display()))?;
+            println!("{}", describe_checkpoint(&model, &f.metadata));
+            let cf = safetensors::read(&classifier)?;
+            let clf =
+                Classifier::from_file(&cf).map_err(|e| format!("{}: {e}", classifier.display()))?;
+            let data = f.metadata.get("data").cloned().unwrap_or_default();
+            let shape = dit.cfg.image;
+            let train = labelled(&data, &data_dir, shape.height, shape.channels, false)?;
+            inside_probes(&dit, &clf, &train, n, steps, seed, preview, attention)
+        }
         Command::Style {
             model,
             n,
@@ -879,6 +928,270 @@ fn run(command: Command) -> Result<(), String> {
             style_table(&dit, n, steps, seed, guidance)
         }
     }
+}
+
+/// The probes of stage 5 (PLAN.md), on n generations of `steps` Euler steps.
+#[allow(clippy::too_many_arguments)]
+fn inside_probes(
+    dit: &Dit<f32>,
+    clf: &Classifier<f32>,
+    train: &mini_diffusion::image::Images,
+    n: usize,
+    steps: usize,
+    seed: u64,
+    preview: Option<PathBuf>,
+    attention: Option<PathBuf>,
+) -> Result<(), String> {
+    use mini_diffusion::classify::best;
+    use mini_diffusion::inside::*;
+    let shape = dit.cfg.image;
+    let l = dit.cfg.labels;
+    let classes = 1 + *train.labels.iter().max().unwrap_or(&0) as usize;
+    let (means, overall) = class_means(&train.pixels, &train.labels, classes);
+    let ys: Vec<usize> = if l > 0 {
+        (0..n).map(|i| i % l).collect()
+    } else {
+        Vec::new()
+    };
+    let what = if l > 0 {
+        "each asked for a digit in turn, guidance w = 1"
+    } else {
+        "no labels"
+    };
+    println!("{n} generations of {steps} Euler steps ({what})");
+    // Generate, keeping every step's velocity.
+    let start = Instant::now();
+    let mut vs: Vec<Mat<f32>> = Vec::with_capacity(steps);
+    let x0 = noise(n, shape.values(), &mut Rng::new(seed));
+    let (last, mut path) = euler(
+        x0.clone(),
+        steps,
+        |x, t| {
+            let v = if l > 0 {
+                dit.predict_labels(x, t, &ys)
+            } else {
+                dit.predict(x, t)
+            };
+            vs.push(v.clone());
+            v
+        },
+        true,
+    );
+    if path.is_empty() {
+        path.push(x0);
+    }
+    println!("  generated in {}", duration(start.elapsed().as_secs_f64()));
+    let tk = |k: usize| k as f32 / steps as f32;
+    let guesses: Vec<Mat<f32>> = (0..steps).map(|k| guess(&path[k], &vs[k], tk(k))).collect();
+
+    // Probe 1: the guess at t = 0 against the mean image.
+    let g0 = &guesses[0];
+    let err: f64 = (0..n)
+        .map(|r| {
+            let target = if l > 0 { &means[ys[r]] } else { &overall };
+            relative_error(g0.row(r), target)
+        })
+        .sum::<f64>()
+        / n as f64;
+    let against = if l > 0 {
+        "the mean image of the digit asked for"
+    } else {
+        "the data's mean image"
+    };
+    println!("\n1. The guess of the finished image at t = 0, against {against}:");
+    println!(
+        "   relative distance {:.1}% (averaged over the {n} generations)",
+        100.0 * err
+    );
+
+    // Probe 2: the commitment curve.
+    let digit = |m: &Mat<f32>| {
+        best(&clf.probabilities(m))
+            .iter()
+            .map(|b| b.0)
+            .collect::<Vec<_>>()
+    };
+    let finals = digit(&last);
+    let marks: Vec<usize> = (0..=10).map(|i| (i * steps / 10).min(steps - 1)).collect();
+    let per: Vec<Vec<usize>> = marks.iter().map(|&k| digit(&guesses[k])).collect();
+    let curve = commitment(&per, &finals);
+    println!("\n2. Generations whose guess is already their final digit, by t:");
+    print!("   t       ");
+    for &k in &marks {
+        print!("{:>6.2}", tk(k));
+    }
+    print!("\n   share   ");
+    for c in &curve {
+        print!("{:>5.0}%", 100.0 * c);
+    }
+    println!();
+
+    // Probe 3: guidance's push, for a model with labels.
+    if l > 0 {
+        let closed: f64 = ys.iter().map(|&c| dist(&means[c], &overall)).sum::<f64>() / n as f64;
+        println!("\n3. How far guidance pushes: the length of v_cond - v_uncond, by t");
+        println!("   at t = 0 it should equal the distance between the class mean and the overall mean: {closed:.2}");
+        println!("       t   length   share of the t = 0 value   the two guesses apart");
+        for &k in &marks {
+            let vu = dit.predict(&path[k], tk(k));
+            let diff = vs[k].zip_map(&vu, |a, b| a - b);
+            let len = mean_norm(&diff);
+            // The same difference in the guesses of the finished image:
+            // (1 - t) times the velocities' difference.
+            let apart = (1.0 - tk(k)) as f64 * len;
+            println!(
+                "    {:4.2}   {len:6.2}   {:22.1}%   {apart:6.2}",
+                tk(k),
+                100.0 * len / closed.max(1e-12)
+            );
+        }
+    } else {
+        println!("\n3. (guidance's push needs a model with labels)");
+    }
+
+    // Probe 4: straightness.
+    let s = straightness(&path);
+    let mean_s = s.iter().sum::<f64>() / n as f64;
+    let min_s = s.iter().copied().fold(f64::INFINITY, f64::min);
+    let bend = (0..n).map(|r| first_half_bend(&path, r)).sum::<f64>() / n as f64;
+    println!("\n4. Straightness (straight-line distance over path length, 1 = straight):");
+    println!(
+        "   mean {mean_s:.3}, least {min_s:.3}; share of the bending in the first half {:.0}%",
+        100.0 * bend
+    );
+
+    // Probe 5: attention distance, by t.
+    let (gh, gw) = (shape.height / dit.cfg.patch, shape.width / dit.cfg.patch);
+    let k_img = n.min(32);
+    let few = |m: &Mat<f32>| Mat::from_vec(k_img, m.cols, m.data[..k_img * m.cols].to_vec());
+    let few_ys: Vec<usize> = ys.iter().take(k_img).copied().collect();
+    let att_marks = [0.1f32, 0.3, 0.5, 0.7, 0.9];
+    let at_step = |t: f32| ((t * steps as f32).round() as usize).min(steps - 1);
+    let mut maps = Vec::new();
+    if gh == gw {
+        let n_t = gh * gw;
+        let even = {
+            let e = Mat::from_vec(n_t, n_t, vec![1.0 / n_t as f32; n_t * n_t]);
+            attention_distance(&e, gh)
+        };
+        println!(
+            "\n5. Attention distance, in patches (even spread {even:.2}, own patch only 0), by t:"
+        );
+        print!("   block   ");
+        for t in att_marks {
+            print!("{t:>7.1}");
+        }
+        println!();
+        let mut by_t = vec![Vec::new(); att_marks.len()];
+        for (ti, &t) in att_marks.iter().enumerate() {
+            let k = at_step(t);
+            let (w, _) = dit.attention_weights(&few(&path[k]), tk(k), &few_ys);
+            let mut per_block = Vec::new();
+            for blk in &w {
+                let mut s = 0.0;
+                let mut cnt = 0;
+                for img in blk {
+                    for head in img {
+                        s += attention_distance(head, gh);
+                        cnt += 1;
+                    }
+                }
+                per_block.push(s / cnt as f64);
+            }
+            by_t[ti] = per_block;
+            maps.push(w);
+        }
+        for b in 0..dit.cfg.blocks {
+            print!("   {:>5}   ", b + 1);
+            for row in &by_t {
+                print!("{:>7.2}", row[b]);
+            }
+            println!();
+        }
+        print!("   mean    ");
+        for row in &by_t {
+            print!("{:>7.2}", row.iter().sum::<f64>() / row.len() as f64);
+        }
+        println!();
+    } else {
+        println!("\n5. (attention distance needs a square grid of patches)");
+    }
+
+    // The figures.
+    if let Some(p) = preview {
+        let rows = 8.min(n);
+        let mut data = Vec::new();
+        for r in 0..rows {
+            for pass in 0..2 {
+                for j in 0..=8 {
+                    let k = (j * steps / 8).min(steps - 1);
+                    let img = if pass == 0 {
+                        guesses[k].row(r).to_vec()
+                    } else {
+                        velocity_image(
+                            &Mat::from_vec(1, shape.values(), vs[k].row(r).to_vec()),
+                            0.5,
+                        )
+                        .data
+                    };
+                    data.extend(img);
+                }
+            }
+        }
+        check_writable(&p)?;
+        write_grid(
+            &p,
+            &Mat::from_vec(rows * 18, shape.values(), data),
+            shape,
+            9,
+            3,
+        )?;
+        println!(
+            "\nWrote {} (for each generation: its guess of the finished image, then its velocity, grey 0, at t = 0, 1/8, ..., 1)",
+            p.display()
+        );
+    }
+    if let (Some(p), false) = (attention, maps.is_empty()) {
+        let centre = (gh / 2) * gw + gw / 2;
+        let ps = dit.cfg.patch;
+        let mut data = Vec::new();
+        for b in 0..dit.cfg.blocks {
+            for w in &maps {
+                let heads = &w[b][0];
+                let mut avg = vec![0.0f32; gh * gw];
+                for h in heads {
+                    for (a, &x) in avg.iter_mut().zip(h.row(centre)) {
+                        *a += x / heads.len() as f32;
+                    }
+                }
+                let max = avg.iter().copied().fold(0.0f32, f32::max).max(1e-12);
+                let mut img = vec![-1.0f32; shape.values()];
+                for y in 0..shape.height {
+                    for x in 0..shape.width {
+                        let patch = (y / ps) * gw + x / ps;
+                        let v = 2.0 * avg[patch] / max - 1.0;
+                        for c in 0..shape.channels {
+                            img[(y * shape.width + x) * shape.channels + c] = v;
+                        }
+                    }
+                }
+                data.extend(img);
+            }
+        }
+        check_writable(&p)?;
+        write_grid(
+            &p,
+            &Mat::from_vec(dit.cfg.blocks * maps.len(), shape.values(), data),
+            shape,
+            maps.len(),
+            3,
+        )?;
+        println!(
+            "Wrote {} (where the centre patch looks, averaged over heads, white = most: one row per block, t = 0.1, 0.3, 0.5, 0.7, 0.9)",
+            p.display()
+        );
+    }
+    Ok(())
 }
 
 /// Prediction 6: draw every class from the same `k` noises, and correlate
