@@ -198,10 +198,26 @@ TEXT_STEPS      ?= 20000
 TEXT_ARGS       ?=
 TEXT_AR_SAMPLES ?= $(OUT)/llm-stories.txt
 
-$(OUT)/text.safetensors: | $(DIFFUSION) $(OUT)
-	@for f in corpus.ids tok.bpe; do \
-		test -f $(LLM_OUT)/$$f || { echo "no $(LLM_OUT)/$$f: run make encode in tiny-llm-in-rust, or set LLM_OUT"; exit 1; }; \
+# The check every stage 6 target makes first: each file named must be in
+# LLM_OUT, or it says where it looked and how to make the files.
+LLM_URL := https://github.com/jlinoff/tiny-llm-in-rust
+LLM_DIR := $(patsubst %/,%,$(dir $(LLM_OUT)))
+define need_llm
+	@for f in $(1); do \
+		test -e $(LLM_OUT)/$$f || { \
+			echo "no $(LLM_OUT)/$$f: stage 6 uses tiny-llm-in-rust's files. To make them:"; \
+			echo "  git clone $(LLM_URL) $(LLM_DIR)"; \
+			echo "  cd $(LLM_DIR) && make encode && make train"; \
+			echo "make encode writes the tokenizer and corpus, which make text needs; make train,"; \
+			echo "the trained model, for the comparison and make llm-stories. Or set LLM_OUT to"; \
+			echo "the out/ folder of a copy you already have."; \
+			exit 1; }; \
 	done
+endef
+
+$(OUT)/text.safetensors: | $(DIFFUSION) $(OUT)
+	$(call need_llm,corpus.ids tok.bpe)
+	@test -e $(LLM_OUT)/model.safetensors || echo "no trained model in $(LLM_OUT) (make train there): the comparison with tiny-llm-in-rust is left out"
 	$(call hdr,train-text)
 	$(DIFFUSION) train-text --ids $(LLM_OUT)/corpus.ids --rope --steps $(TEXT_STEPS) \
 		$(if $(wildcard $(LLM_OUT)/model.safetensors),--compare $(LLM_OUT)/model.safetensors) $(TEXT_ARGS) -o $@
@@ -210,6 +226,7 @@ $(OUT)/text.safetensors: | $(DIFFUSION) $(OUT)
 text: $(OUT)/text.safetensors ## Stage 6: train the masked diffusion language model on tiny-llm-in-rust's corpus: about 35 minutes.
 
 text-sample: $(OUT)/text.safetensors | $(DIFFUSION) ## Stage 6: stories at 16, 64 and 256 steps in random and confidence order, timed; infilled stories; the text measures.
+	$(call need_llm,corpus.ids tok.bpe)
 	$(call hdr,sample-text: random order)
 	$(DIFFUSION) sample-text --model $< --tokenizer $(LLM_OUT)/tok.bpe --ids $(LLM_OUT)/corpus.ids --order random --out-prefix $(OUT)/text-random
 	$(call hdr,sample-text: confidence order)
@@ -222,10 +239,9 @@ text-sample: $(OUT)/text.safetensors | $(DIFFUSION) ## Stage 6: stories at 16, 6
 
 # tiny-llm-in-rust's own stories, 8 of up to 256 tokens from 'Once upon a
 # time', by its own program, for make text-sample to measure alongside.
-LLM_DIR := $(LLM_OUT)/..
 .PHONY: llm-stories
 llm-stories: | $(OUT) ## Stage 6: 8 stories from tiny-llm-in-rust's trained model, into TEXT_AR_SAMPLES.
-	@test -x $(LLM_DIR)/transformer/target/release/transformer || { echo "build tiny-llm-in-rust first (make build there)"; exit 1; }
+	$(call need_llm,tok.bpe model.safetensors ../transformer/target/release/transformer)
 	$(call hdr,stories from tiny-llm-in-rust)
 	for s in 1 2 3 4 5 6 7 8; do \
 		$(LLM_DIR)/transformer/target/release/transformer generate --model $(LLM_OUT)/model.safetensors \
