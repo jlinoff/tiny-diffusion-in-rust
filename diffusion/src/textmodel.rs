@@ -130,6 +130,19 @@ impl<T: Float> TextModel<T> {
     /// another (B·T of them, T ≤ context): the logits over the V real
     /// tokens at every position, and the parameters' variables.
     pub fn forward(&self, tape: &mut Tape<T>, ids: &[usize], batch: usize) -> (Var, Vec<Var>) {
+        self.forward_with(tape, ids, batch, false)
+    }
+
+    /// The same network with the causal mask (`causal`), each position
+    /// seeing only those before it: tiny-llm-in-rust's model exactly, for
+    /// the control of stage 6 (PLAN.md, Stage 6 results so far).
+    pub fn forward_with(
+        &self,
+        tape: &mut Tape<T>,
+        ids: &[usize],
+        batch: usize,
+        causal: bool,
+    ) -> (Var, Vec<Var>) {
         let c = self.cfg;
         let seq = ids.len() / batch;
         assert!(
@@ -159,7 +172,11 @@ impl<T: Float> TextModel<T> {
                 tape.slice_cols(qkv, d, d),
                 tape.slice_cols(qkv, 2 * d, d),
             );
-            let a = tape.attention_full(q, k, v, seq, c.heads);
+            let a = if causal {
+                tape.attention(q, k, v, seq, c.heads)
+            } else {
+                tape.attention_full(q, k, v, seq, c.heads)
+            };
             let a = lin(tape, a, w + 4);
             x = tape.add(x, a);
             let n = tape.layer_norm(x, p[w + 6], p[w + 7]);
@@ -288,6 +305,9 @@ pub struct TextTraining {
     /// none to all; a larger value is the lighter masking of stage 6's
     /// diagnostic (PLAN.md, Stage 6 results so far).
     pub t_min: f64,
+    /// The control: train the same network as tiny-llm-in-rust trains its
+    /// own, causal, predicting each next token, no masking.
+    pub next_token: bool,
 }
 
 impl TextTraining {
@@ -321,13 +341,20 @@ pub fn train(
         let mut rng = Rng::stream(c.seed ^ 0x7E87, step);
         let (mut ids, mut targets) = (Vec::new(), Vec::new());
         for &s in &starts {
+            if c.next_token {
+                // tiny-llm-in-rust's windows: seq inputs, each target the
+                // token after its input.
+                ids.extend(data[s..s + seq].iter().map(|&t| t as usize));
+                targets.extend(data[s + 1..s + seq + 1].iter().map(|&t| Some(t as usize)));
+                continue;
+            }
             let t = c.t_min + (1.0 - c.t_min) * rng.unit();
             let (i, tg) = mask_window(&data[s..s + seq], t, model.cfg.mask(), &mut rng, true);
             ids.extend(i);
             targets.extend(tg);
         }
         let mut tape = Tape::new();
-        let (logits, vars) = model.forward(&mut tape, &ids, c.batch);
+        let (logits, vars) = model.forward_with(&mut tape, &ids, c.batch, c.next_token);
         let loss = tape.cross_entropy(logits, &targets);
         let value = tape.value(loss).data[0];
         tape.backward(loss);
@@ -344,6 +371,26 @@ pub fn train(
         report(step, value);
     }
     losses
+}
+
+/// The control's validation loss: the mean −log p(next token) over held-
+/// out windows of seq + 1 tokens, with the causal mask, as
+/// tiny-llm-in-rust measures its own.
+pub fn next_token_loss(model: &TextModel<f32>, windows: &[&[u32]]) -> f64 {
+    let mut total = 0.0;
+    let mut n = 0usize;
+    for w in windows {
+        let seq = w.len() - 1;
+        let ids: Vec<usize> = w[..seq].iter().map(|&t| t as usize).collect();
+        let mut tape = Tape::new();
+        let (l, _) = model.forward_with(&mut tape, &ids, 1, true);
+        let logits = tape.value(l);
+        for j in 0..seq {
+            total += nll(logits.row(j), w[j + 1] as usize);
+            n += 1;
+        }
+    }
+    total / n.max(1) as f64
 }
 
 /// −log p(target) from one row of logits.
@@ -686,6 +733,7 @@ mod tests {
             beta2: 0.95,
             seed: 1,
             t_min: 0.0,
+            next_token: false,
         };
         let l = train(&mut m, &c.ids, &tc, |_, _| {});
         let got = [l[0], l[19], l[39]];
@@ -693,6 +741,47 @@ mod tests {
         for (g, w) in got.iter().zip(GOLDEN) {
             assert!((g - w).abs() < 2e-3, "{got:?}, golden {GOLDEN:?}");
         }
+    }
+
+    /// The control: with the causal mask, an earlier position never sees a
+    /// later token, and next-token training lowers the next-token loss.
+    #[test]
+    fn the_causal_control() {
+        let m = TextModel::<f32>::new(small(), 10);
+        let mut t = Tape::new();
+        let (a, _) = m.forward_with(&mut t, &[1, 2, 3, 4, 5, 6], 1, true);
+        let a = t.value(a).clone();
+        let mut t = Tape::new();
+        let (b, _) = m.forward_with(&mut t, &[1, 2, 3, 4, 5, 9], 1, true);
+        assert_eq!(a.row(0), t.value(b).row(0));
+        let c = Corpus::decode(include_bytes!("../tests/data/tiny.ids")).unwrap();
+        let cfg = TextConfig {
+            vocab: c.vocab_size,
+            width: 16,
+            blocks: 1,
+            heads: 2,
+            context: 16,
+            ffn: 32,
+        };
+        let mut m = TextModel::new(cfg, 1);
+        let windows: Vec<&[u32]> = c.ids.chunks_exact(17).take(20).collect();
+        let before = next_token_loss(&m, &windows);
+        let tc = TextTraining {
+            steps: 200,
+            batch: 8,
+            learning_rate: 3e-3,
+            warmup: 10,
+            min_lr_fraction: 0.1,
+            weight_decay: 0.1,
+            grad_clip: 1.0,
+            beta2: 0.95,
+            seed: 1,
+            t_min: 0.0,
+            next_token: true,
+        };
+        train(&mut m, &c.ids, &tc, |_, _| {});
+        let after = next_token_loss(&m, &windows);
+        assert!(after < before - 1.0, "{before} -> {after}");
     }
 
     #[test]

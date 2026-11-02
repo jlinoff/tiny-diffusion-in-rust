@@ -343,6 +343,11 @@ enum Command {
         /// each training window is masked (0: anywhere from none to all).
         #[arg(long, default_value_t = 0.0)]
         t_min: f64,
+        /// The control: train the same network causally, predicting each
+        /// next token, as tiny-llm-in-rust trains its own (no masking; its
+        /// validation loss is reported in place of the diffusion bound).
+        #[arg(long)]
+        next_token: bool,
         /// The share of the tokens held out, at the end, as tiny-llm-in-rust.
         #[arg(long, default_value_t = 0.05)]
         valid_fraction: f64,
@@ -1021,6 +1026,7 @@ fn run(command: Command) -> Result<(), String> {
             beta2,
             seed,
             t_min,
+            next_token,
             valid_fraction,
             valid_windows,
             draws,
@@ -1060,15 +1066,24 @@ fn run(command: Command) -> Result<(), String> {
                 beta2,
                 seed,
                 t_min,
+                next_token,
+            };
+            let kind = if next_token {
+                "the control, a causal next-token model"
+            } else {
+                "a masked diffusion language model"
             };
             println!(
-                "Training a masked diffusion language model ({} parameters: width {width}, {blocks} blocks, {heads} heads, context {context}, V = {} + MASK) on {}: {} training tokens, {} held out; {steps} steps of {batch} windows",
+                "Training {kind} ({} parameters: width {width}, {blocks} blocks, {heads} heads, context {context}, V = {} + MASK) on {}: {} training tokens, {} held out; {steps} steps of {batch} windows",
                 cfg.parameters(),
                 cfg.vocab,
                 ids.display(),
                 tr.len(),
                 va.len()
             );
+            if next_token {
+                println!("  causal attention, each position predicting the next token, no masking");
+            }
             if t_min > 0.0 {
                 println!(
                     "  lighter masking: at most {:.0}% of each window masked",
@@ -1095,8 +1110,20 @@ fn run(command: Command) -> Result<(), String> {
                 }
             });
             println!("Trained in {}", duration(start.elapsed().as_secs_f64()));
+            let mut control = f64::NAN;
+            if next_token {
+                let windows = vw(va, context + 1, valid_windows);
+                let v = mini_diffusion::textmodel::next_token_loss(&model, &windows);
+                control = v;
+                println!(
+                    "Next-token validation loss on {} held-out windows: {v:.4} nats per token (the control: the same network trained as tiny-llm-in-rust's)",
+                    windows.len()
+                );
+            }
             let windows = vw(va, context, valid_windows);
-            let (bound, se) = if windows.is_empty() {
+            let (bound, se) = if next_token {
+                (f64::NAN, f64::NAN)
+            } else if windows.is_empty() {
                 println!("(no held-out window of {context} tokens: no bound measured)");
                 (f64::NAN, f64::NAN)
             } else {
@@ -1116,9 +1143,10 @@ fn run(command: Command) -> Result<(), String> {
                         let v: f64 = v.parse().map_err(|_| "bad valid_loss".to_string())?;
                         let step = f.metadata.get("step").map(String::as_str).unwrap_or("?");
                         println!(
-                            "tiny-llm-in-rust's validation loss ({}, step {step}): {v:.4} nats per token; the diffusion bound is {:+.1}% of it",
+                            "tiny-llm-in-rust's validation loss ({}, step {step}): {v:.4} nats per token; {} is {:+.1}% of it",
                             p.display(),
-                            100.0 * (bound / v - 1.0)
+                            if next_token { "the control's" } else { "the diffusion bound" },
+                            100.0 * (if next_token { control } else { bound } / v - 1.0)
                         );
                     }
                     None => println!("{}: no valid_loss in its metadata", p.display()),

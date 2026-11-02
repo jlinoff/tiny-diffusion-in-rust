@@ -2423,6 +2423,58 @@ reason production text diffusion models use rotary positions, which
 build the distance between two tokens into attention from the first
 step (How far could this go?, How representative is this?).
 
+**Then the same on TinyStories, 64 positions:** also stuck. With full
+masking, a context of 64 and 32 windows a step (the same 2,048 tokens),
+the loss reached 5.96 at step 2,000 and the bound 6.03: a little lower
+than at 256, with a slow creep starting about step 1,300, but no
+escape. So the window's length isn't the whole story for real text.
+
+**The control, before going further:** the same code, data and network,
+trained as tiny-llm-in-rust trains its own (`train-text --next-token`:
+the causal mask, each position predicting the next token, no masking).
+If the control reaches about tiny-llm-in-rust's 3.23 in 2,000 steps,
+everything but the masked objective is right; if it stalls too, the
+fault is in this project's code, not in masked diffusion. (Expected,
+when the control was set up: about 3.2 to 3.5.)
+
+**Meanwhile, the vocabulary:** the same synthetic text, but with 4,096
+tokens (tiny-llm-in-rust's V) in place of 50, at the 64 positions where
+the 50-token version escaped. The unigram level is now 4.775; the loss
+went 4.89, 4.85, 4.78 … 4.79 over 400 steps, never leaving it, where
+the 50-token text had left it by step 200. A shorter run (400 steps),
+and a harder text: 4,096 pairings to learn in place of 50, each rare
+token seen only a few times. Still, it fits: a masked position has
+nothing of its own, so every pairing has to be learned through
+attention, and that is slower as the window grows and as the
+vocabulary grows.
+
+**The control: it learns.** Trained as tiny-llm-in-rust trains its own,
+the same network left the plateau within 200 steps:
+
+| Step | 100 | 200 | 500 | 1,000 | 1,500 | 2,000 |
+|---|---|---|---|---|---|---|
+| Masked (training loss) | 6.68 | 6.10 | 6.06 | 6.05 | 6.04 | 6.03 |
+| Control (training loss) | 6.25 | 4.46 | 3.93 | 3.47 | 3.23 | 3.09 |
+
+Its validation loss, 3.53 nats per token on 64 held-out windows, is
+9.2% above tiny-llm-in-rust's 3.23 and just outside the range expected
+(3.2 to 3.5); its training loss ended at 3.09. The gap to
+tiny-llm-in-rust's model hasn't been looked into (a different
+initialization and random streams, and 64 windows against its whole
+held-out set); it is small beside the masked model's 93%. Training ran
+at about 21,000 tokens per second, the same as masked training.
+
+So the data, the windows, the network, AdamW and the training loop are
+sound, and the plateau belongs to the masked objective, at this size,
+with learned absolute positions. The difference is in where the easiest
+information is. A next-token model's best first lesson, which token
+usually follows this one, needs no attention at all: the current token
+reaches the output through the residual stream, and the output layer
+learns the pairings directly. A masked position carries only MASK, so
+the same lesson has to come through attention, from a neighbour the
+model must first learn to find, with learned positions, among every
+position in the window.
+
 ## How far could this go?
 
 tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
