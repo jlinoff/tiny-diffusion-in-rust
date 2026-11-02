@@ -71,6 +71,7 @@ names are explained where they first appear.
   - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
   - [Compared with tiny-llm-in-rust's model](#compared-with-tiny-llm-in-rusts-model)
+  - [Inference compared, and why a pretrained model can't simply switch](#inference-compared-and-why-a-pretrained-model-cant-simply-switch)
   - [What it adds](#what-it-adds-2)
   - [How it will be tested](#how-it-will-be-tested-2)
   - [Predictions](#predictions-4)
@@ -2044,6 +2045,60 @@ record before running:
   parallel, which may let two tokens settled in the same step contradict
   each other, since neither sees the other's choice.
 
+### Inference compared, and why a pretrained model can't simply switch
+
+Added when the stage was built. The two kinds of model share most of
+their parts: the tokenizer, the forward pass through the blocks (one
+with the causal mask, one without), the output logits, and drawing a
+token from a distribution with a temperature and top-k (this stage
+uses tiny-llm-in-rust's sampling settings). What differs is the loop
+around the forward pass:
+
+| | Autoregressive (tiny-llm-in-rust, SmolLM) | Masked diffusion (this stage) |
+|---|---|---|
+| Starting point | the prompt | a canvas of fixed length: the prompt, then MASK everywhere else |
+| Each pass computes | the next token's distribution | a distribution at every masked position |
+| Each pass keeps | one token, appended at the end | the most confident few, anywhere on the canvas |
+| Number of passes | one per new token, until end-of-text or a limit | a number of steps chosen in advance |
+| Length | grows until the model stops | fixed in advance; the model fills spare room with end-of-text |
+| Earlier work reused | the KV cache: past tokens are never recomputed | none: every pass recomputes every position, since any of them can attend to the ones just settled |
+| The prompt | processed once, then cached | part of the canvas, recomputed on every pass |
+
+Hybrids sit between the two. **Block diffusion** generates blocks of
+tokens left to right, autoregressively, and runs diffusion within each
+block, so finished blocks can be cached as an autoregressive model's
+past is (Arriola et al. 2025); approximate caching schemes reuse the
+keys and values of positions that have nearly stopped changing.
+
+**Why SmolLM-1.7B can't be run as a diffusion model.** The open-weight
+model tiny-llm-in-rust runs learned everything under the causal setup:
+
+- **The causal mask.** Every weight was trained with each position
+  seeing only the positions before it. Removing the mask hands every
+  attention head information it has never seen, from the future, and
+  the model's internal computations no longer mean what they did.
+- **No MASK token.** Its vocabulary has nothing that means "a word is
+  missing here", and it never learned to predict a hidden token from
+  context on both sides.
+- **Another objective.** It learned the distribution of the next token
+  given the past; masked diffusion needs the distribution of any
+  missing token given everything visible.
+
+A pretrained autoregressive model can be **adapted** into a diffusion
+model by more training: start from its weights, add a MASK embedding,
+relax the causal mask to full attention gradually rather than at once,
+and continue training on the masked objective. Meta's LLaMA-2 7B
+(LLaMA: Large Language Model Meta AI; 7 billion parameters) was adapted
+this way into **DiffuLLaMA**, a diffusion LLaMA (Gong et al. 2025), and
+Dream 7B started from Alibaba's Qwen2.5-7B (Ye et al. 2025). The pretrained weights help, because much
+of what they know about language carries over, but the adaptation took
+billions of tokens of training. For SmolLM-1.7B in this project's code
+on the M4 it is out of reach: training needs about 16 bytes per
+parameter (weights, gradients and Adam's two running averages), some
+27 GB before activations, and at about 6 × 1.7 billion operations per
+token the M4 would train on a few tens of tokens per second. Even
+SmolLM-135M would take weeks.
+
 ### What it adds
 
 A masked diffusion language model, as described above, built to be
@@ -2373,6 +2428,14 @@ first.
   [arXiv:2406.07524](https://arxiv.org/abs/2406.07524).
 - Nie, S., et al. (2025). "Large Language Diffusion Models."
   [arXiv:2502.09992](https://arxiv.org/abs/2502.09992). LLaDA.
+- Gong, S., et al. (2025). "Scaling Diffusion Language Models via
+  Adaptation from Autoregressive Models." ICLR.
+  [arXiv:2410.17891](https://arxiv.org/abs/2410.17891). DiffuLLaMA.
+- Ye, J., et al. (2025). "Dream 7B: Diffusion Large Language Models."
+  [arXiv:2508.15487](https://arxiv.org/abs/2508.15487).
+- Arriola, M., et al. (2025). "Block Diffusion: Interpolating Between
+  Autoregressive and Diffusion Language Models." ICLR.
+  [arXiv:2503.09573](https://arxiv.org/abs/2503.09573).
 - Zhou, C., et al. (2024). "Transfusion: Predict the Next Token and
   Diffuse Images with One Multi-Modal Model."
   [arXiv:2408.11039](https://arxiv.org/abs/2408.11039).
