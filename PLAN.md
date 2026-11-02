@@ -79,6 +79,7 @@ names are explained where they first appear.
   - [Running it](#running-it-4)
   - [Stage 6 results so far](#stage-6-results-so-far)
 - [How far could this go?](#how-far-could-this-go)
+  - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
   - [Why latent models need their autoencoder](#why-latent-models-need-their-autoencoder)
   - [What supporting latent diffusion would take](#what-supporting-latent-diffusion-would-take)
@@ -2351,6 +2352,40 @@ tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
 own code. This section asks the same of diffusion: which open models
 exist, which could this project's code run, and what it would take.
 Written as a plan, not yet done.
+
+### How representative is this?
+
+Like tiny-llm-in-rust, whose own model is the design of GPT-2
+(Generative Pre-trained Transformer 2, OpenAI's model of 2019) while
+production language models use rotary positions, RMSNorm (a simpler
+layer normalization) and SwiGLU (a gated feed-forward layer), the gap
+its SmolLM endpoint closed, this project keeps production's
+algorithms at a small scale and simplifies the system around them. So
+which lessons transfer, and which are artifacts of the scale?
+
+**The same as production:**
+
+- **Flow matching**, the objective of Stable Diffusion 3 and FLUX.
+- **The DiT with adaLN-Zero**, the backbone of DiT-XL/2, Stable
+  Diffusion 3 and FLUX.
+- **Classifier-free guidance with label dropout**, exactly as used in
+  production, text prompts in place of labels.
+- **The masked diffusion objective and its bound**, as in MDLM and LLaDA.
+
+**Simplified, and what each simplification hides:**
+
+| Here | In production | What it hides |
+|---|---|---|
+| diffusion on pixels | diffusion on an autoencoder's latent | the two-network design and why it's cheaper; that what a production model diffuses is a learned space, not pixels (Why latent models need their autoencoder, above) |
+| class labels | text prompts, through a text encoder, attended to by the image's tokens | how a sentence, rather than one of ten labels, steers an image |
+| learned absolute positions | rotary positions (RoPE: each query and key rotated by an angle that grows with its position, so attention sees how far apart two tokens are) | that "attend to my neighbour" can be built in rather than learned; possibly part of stage 6's plateau |
+| thousands of training steps | hundreds of thousands, on far more data | behaviour that appears only with enough training, as stage 6's plateau showed |
+| f32, Euler steps, the weights as trained | bf16, faster samplers, weights averaged over training (EMA, an exponential moving average) | engineering more than ideas |
+
+The first row is the largest gap: every production image model today is
+latent, and a reader who learned diffusion only from stages 2 to 5
+would picture the model working on pixels. The section after next says
+what closing it would take.
 
 ### Open models
 
