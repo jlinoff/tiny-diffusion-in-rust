@@ -345,6 +345,8 @@ gets:
   every acronym in PLAN.md and README.md defined where it's first used
   (`tools/acronyms.py`; names that need no definition are listed in
   `tools/acronyms-known.txt`).
+- **figures**: every file under `docs/` that PLAN.md or README.md shows
+  must exist (`make lint`).
 - **`make help`** lists every target and every variable meant to be set
   on the command line; lint fails if a variable is added to the Makefile
   without a line in the help.
@@ -932,6 +934,24 @@ slanted 1: more starting points changing sides as the field moved. The
 progress grid shows the same coarse-to-fine order as every checkpoint:
 each digit is decided by t = 0.5 and only sharpened after.
 
+The run in pictures: 64 samples from the same noise at four points of
+training (copied to `docs/` from `make peek` and `out/digits.png`; how to
+read them: [How to read the figures](#how-to-read-the-figures), Image
+grids). Broken, speckled strokes at step 2,000; strokes joining by
+6,000; about half clear digits at 10,000; about two-thirds at the end.
+The same cell can be followed across the four.
+
+| Step 2,000 | Step 6,000 | Step 10,000 | Step 20,000 (the end) |
+|---|---|---|---|
+| ![Samples at step 2,000](docs/digits-step2000.png) | ![Samples at step 6,000](docs/digits-step6000.png) | ![Samples at step 10,000](docs/digits-step10000.png) | ![Samples at step 20,000](docs/digits.png) |
+
+And eight of the final samples generated step by step, from noise at the
+left (t = 0) to the digit at the right (t = 1), in nine moments: each
+digit's shape and place are fixed by the middle column, and the rest of
+the path only cleans it up (prediction 3).
+
+![Eight generations from noise to digit, at t = 0, 1/8, ..., 1](docs/digits-progress.png)
+
 Against the predictions so far:
 
 - **2, digits appear early: right on timing, half right on the end
@@ -994,6 +1014,23 @@ Against the predictions so far:
   on 28 × 28 digits at this width, 4 × 4 patches cost 3.6 times as much
   for a lower loss and no visible gain.
 
+The fewer-steps ladder (prediction 4): the final model's same 64 noises
+sampled with 1, 2, 4 and 10 Euler steps, beside the usual 50. One step
+lands every sample on the mean image; two give tangles of candidate
+strokes; four, ghost strokes; ten are nearly the same as fifty.
+
+| 1 step | 2 steps | 4 steps | 10 steps | 50 steps |
+|---|---|---|---|---|
+| ![1 Euler step](docs/digits-euler1.png) | ![2 Euler steps](docs/digits-euler2.png) | ![4 Euler steps](docs/digits-euler4.png) | ![10 Euler steps](docs/digits-euler10.png) | ![50 Euler steps](docs/digits.png) |
+
+The patch sizes (prediction 6): the 7 × 7 model early in training, with
+its blocking plain (strokes built of slabs and cut off along the 7-pixel
+grid), and both models at the end, from the same noise.
+
+| 7 × 7, step 1,000 | 7 × 7, step 20,000 | 4 × 4, step 20,000 |
+|---|---|---|
+| ![7 by 7 patches at step 1,000, blocky](docs/digits-p7-step1000.png) | ![7 by 7 patches at the end](docs/digits-p7.png) | ![4 by 4 patches at the end](docs/digits.png) |
+
 **The same noise gives the same digit, whatever the patch size.** The
 4 × 4 and 7 × 7 models were trained separately, with different
 architectures, yet from the same starting noise they draw mostly the
@@ -1032,6 +1069,14 @@ The progress rows settle coarse to fine more plainly still: the
 silhouette is visible by t = 0.375 to 0.5, earlier than the digits,
 because a large bright region is most of the image, and textures and
 prints are the last thing to appear.
+
+Generated clothing against real (prediction 5): the silhouettes are
+nearly all right; the prints, text and stripes of the real images become
+grey mottling in the generated ones, and sandal straps tangle.
+
+| Generated (`fashion.png`) | Real (`fashion-real.png`) |
+|---|---|
+| ![Generated Fashion-MNIST samples](docs/fashion.png) | ![Real Fashion-MNIST images](docs/fashion-real.png) |
 
 ### What stage 3 taught
 

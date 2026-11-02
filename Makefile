@@ -217,6 +217,9 @@ lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links, acronyms de
 		while read v; do case " $(HELP_VARS) " in *" $$v "*) ;; *) echo $$v;; esac; done); \
 	test -z "$$missing" || { echo "make help doesn't list: $$missing (add to HELP_VARS)"; exit 1; }; \
 	echo "make help lists every variable"
+	@for f in $$(grep -ohE 'docs/[A-Za-z0-9._-]+' PLAN.md README.md | sort -u); do \
+		test -f $$f || { echo "PLAN.md or README.md shows $$f, which doesn't exist"; exit 1; }; \
+	done; echo "every figure the documents show exists"
 
 .PHONY: toc
 toc: ## Update PLAN.md's table of contents and check its internal links.
