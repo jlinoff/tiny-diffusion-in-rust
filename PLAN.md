@@ -2346,6 +2346,40 @@ below 4.2. Mechanism: the counting task's plateau, scaled from 128 to
 10,000 or more to learn; prediction 2's reasons for a gap remain.
 Check: only that scaling, from two points; low confidence.
 
+**The longer run: the prediction was wrong.** 20,000 steps, 34 min 28 s.
+No escape: the loss crept down slowly, 6.04 at step 2,000, 6.00 at 4,000,
+5.97 at 9,000, 5.93 at 14,000, about 5.90 at the end, with nothing like
+the counting task's sudden fall. Diffusion bound 6.13 ± 0.04, 89% above
+tiny-llm-in-rust's 3.23 (predicted below 4.2). Ten times the training
+bought 0.12 nats. Real text offers weak clues that pay a little at a
+time (where in a story a position is, the window's general vocabulary),
+which would explain a creep rather than a break, but the strong clue,
+the neighbouring words, was still not being used.
+
+Its samples, with `make text-sample` (`text_stats.py` now reading its
+arguments correctly), against held-out stories and tiny-llm-in-rust's
+own (`make llm-stories`):
+
+| Text | Words | Repetition | Distinct-2 | Speed, tokens per second |
+|---|---|---|---|---|
+| held-out stories | 12,684 | 0.11% | 0.590 | |
+| tiny-llm-in-rust's stories | 1,045 | 0.29% | 0.603 | 2,498 |
+| diffusion, 16 steps | 193 | 21.2% | 0.380 | 964 |
+| diffusion, 64 steps | 67 | 19.4% | 0.542 | 254 |
+| diffusion, 256 steps | 24 | 16.7% | 0.706 | 64 |
+
+Eight windows of 256 tokens hold only 24 to 193 words: the rest is
+punctuation, spaces and end-of-story markers, the commonest tokens. So
+**prediction 4** (fewer steps, more repetition) is wrong as worded:
+repetition does rise as the steps fall, 16.7%, 19.4%, 21.2%, but at 256
+steps it is 150 times real text's, not within 1.5 times. The mechanism
+it was about, neighbours settled in the same step not seeing each
+other, can't be told apart here from a model that doesn't use its
+neighbours at all, even when they are settled. **Prediction 5** stays
+untestable: every token settled early or late is among the commonest.
+tiny-llm-in-rust's stories, by contrast, are as varied as real ones and
+barely more repetitive, at 2,498 tokens per second.
+
 **A diagnostic, prepared while that run trained:** lighter masking.
 `train-text --t-min 0.7` draws t from (0.7, 1), so at most 30% of each
 window is masked. If heavily masked windows are what hold the model on
@@ -2360,6 +2394,34 @@ same 2,000 steps. A model that knows only how common each token is
 scores the same however much is masked, so a loss below the plateau
 means the model uses context. (Its diffusion bound, measured over all
 t, will be poor: it never trains on heavy masking.)
+
+**The diagnostic: wrong.** With at most 30% of each window masked, the
+loss sat on the same plateau, 6.03 at step 2,000 against 6.04 with full
+masking (predicted under 5.0); bound 6.27. Heavy masking isn't what
+holds the model on real text.
+
+**What does: finding neighbours among 256 positions.** A synthetic text
+where each token is followed by a fixed partner 70% of the time, so a
+masked token is easy to recover from the token before it, trained with
+this model at tiny-llm-in-rust's size, the same tokens per step (2,048)
+and at most 30% masked, differing only in the window's length:
+
+| Context | Loss at step 100, 300, 600 (the unigram level, knowing only how common each token is: 2.92) |
+|---|---|
+| 256 positions | 3.05, 2.93, 2.91: never leaves the plateau |
+| 64 positions | 3.04, 2.42, 1.46: leaves it by step 200 |
+
+With learned absolute positions, the model has to learn, separately for
+every position, which positions are its neighbours before any
+neighbour can help it, and at the start attention spreads each
+position's view evenly over the whole window. With 64 positions that
+takes about 200 steps; with 256, more than this budget allows, on this
+easy text as on real stories. It is the plateau known from BERT
+(Bidirectional Encoder Representations from Transformers, the masked
+language model of 2018), which also uses learned positions, and the
+reason production text diffusion models use rotary positions, which
+build the distance between two tokens into attention from the first
+step (How far could this go?, How representative is this?).
 
 ## How far could this go?
 
