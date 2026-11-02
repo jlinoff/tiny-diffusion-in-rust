@@ -11,14 +11,15 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: stage 3 of 6, images.** Stage 2 did flow matching and DDPM
-(the original diffusion recipe) on 2D data, with plots of the samples,
-the paths from noise to data, and the learned velocity field. Stage 3
-trains a 1.8-million-parameter diffusion transformer on the MNIST
-handwritten digits (a classic set of 60,000 small images) in
-about an hour and a half on a laptop; about two-thirds of its samples
-are clear digits. Larger patches give the same images for about a
-quarter of the compute, and the same model draws recognizable clothing.
+**Status: stage 4 of 6 done, images on request.** Stage 2 did flow
+matching and DDPM (the original diffusion recipe) on 2D data, with plots
+of the samples, the paths from noise to data, and the learned velocity
+field. Stage 3 trains a 1.8-million-parameter diffusion transformer on
+the MNIST handwritten digits (a classic set of 60,000 small images) in
+about an hour and a half on a laptop. Stage 4 tells it which digit to
+draw, with classifier-free guidance to strengthen the request (an extra
+push towards the requested digit, of a strength w set when sampling), and
+measures the results with a digit classifier built for the purpose.
 Every stage arrives with its tests, and `make test` and continuous
 integration have run from the first commit.
 
@@ -27,6 +28,18 @@ integration have run from the first commit.
 Each panel above comes from a 36,000-parameter network trained in under a
 minute: points drawn from noise follow the learned velocity field (bottom
 row, at three moments) to land on the two moons.
+
+| Guidance w = 1 | Guidance w = 5 |
+|---|---|
+| ![Digits 0 to 9, one per row, eight noises across, guidance 1](docs/digits-w1.png) | ![The same digits and noises at guidance 5](docs/digits-w5.png) |
+
+The same idea on images, with a request: each row asks the
+1.8-million-parameter model for one digit, and each column starts from
+the same noise, so the noise decides how the digit is written. At
+w = 1 (left), 94% of samples are the requested digit and as varied as
+real handwriting; at w = 5 (right), all are, bolder and more alike. One
+column's noise makes poor digits whatever is asked for, until guidance
+rescues it.
 
 ## PLAN.md: the real documentation
 

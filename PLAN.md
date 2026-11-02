@@ -57,6 +57,7 @@ names are explained where they first appear.
   - [What was built so far](#what-was-built-so-far)
   - [Running it](#running-it-2)
   - [Stage 4 results](#stage-4-results)
+  - [What stage 4 taught](#what-stage-4-taught)
 - [Stage 5: looking inside](#stage-5-looking-inside)
   - [Where it fits](#where-it-fits-4)
 - [Stage 6: text, later](#stage-6-text-later)
@@ -251,8 +252,8 @@ the example changes at every sampling step.
    without the causal mask, adaLN conditioning on time, a velocity per
    pixel. Grids of generated digits as image files, and the same picture
    at successive steps of one generation, noise sharpening into a digit.
-4. **Conditioning and guidance** (next; its section is written before
-   any code, with its predictions). The digit's class as a condition,
+4. **Conditioning and guidance** (done: see [Stage
+   4](#stage-4-conditioning-and-guidance)). The digit's class as a condition,
    and classifier-free guidance: "draw a 7", and what the guidance scale
    trades.
 5. **Looking inside** (optional; see [Stage 5](#stage-5-looking-inside)):
@@ -1460,7 +1461,83 @@ digits, and part of the loss floor was that hedging). `make guidance`,
   of the training examples buys an unconditional mode, but not as good
   a one as a model trained only for it; the shared weights carry over
   less than I guessed.
-- **8, the 4 × 4 confirmation**: not yet run.
+- **8, the 4 × 4 confirmation: right.** `make digits-cond-p4` (1 h
+  33 min; mean loss over the last 500 steps 0.1608) and `make guidance
+  GUIDE_MODEL=out/digits-cond-p4.safetensors`, against the 7 × 7 model:
+
+  | | 7 × 7 | 4 × 4 | Difference |
+  |---|---|---|---|
+  | Agreement at w = 1 | 93.2% | 94.6% | 1.4 points |
+  | Confident at w = 1 | 93.4% | 93.9% | 0.5 |
+  | Confident at w = 0 (unconditional) | 62.2% | 63.5% | 1.3 |
+  | Agreement and confident from w = 3 | 100% | 100% | 0 |
+  | Variety at w = 1, 3, 8 | 0.99, 0.88, 0.82 | 0.99, 0.88, 0.81 | at most 0.01 |
+  | Overshoot at w = 8 (margin 0.25) | 0.09% | 0.00% | |
+  | Style correlation, same noise: slant, ink | 0.56, 0.65 | 0.52, 0.62 | 0.04 |
+  | Time for 1,000 samples at w = 1 | 14 s | 43 s | 3.1 times |
+
+  Every measurement agrees within 3 points, as predicted, and every
+  conclusion above holds at 4 × 4: the label removes the blends,
+  guidance trades variety for clarity without breaking by w = 8, the
+  noise decides slant and thickness more than position, and the
+  unconditional mode is about 11 points worse than a model trained only
+  for it (63.5% against `digits`' 72.3%). Decision 7 holds: for these
+  measurements, 7 × 7 patches gave the same answers for a third of the
+  compute.
+
+  One more prediction, made in conversation at step 5,000 of this run
+  from the ratio of conditional to unconditional loss at 7 × 7 (0.911):
+  the final loss would be about 0.162. It was 0.1608: the label's share
+  of the loss is the same at both patch sizes, as the mechanism (the
+  hedging between digits is a property of the data) says.
+
+  The grids add the observation of the night: the 4 × 4 model draws,
+  from each noise, much the same digit in much the same hand as the
+  7 × 7 model, and the column whose noise gave malformed digits at
+  7 × 7 gives malformed digits at 4 × 4 too. Two networks of different
+  architectures, trained separately, agree on which noises are bad
+  starting points, as well as on what each noise becomes.
+
+### What stage 4 taught
+
+1. **Telling the model what to draw fixes most of its failures.** At
+   w = 1, confident samples rose from 74% (stage 3, 7 × 7) to 93%, and
+   the loss fell by 9% at both patch sizes (0.911 and 0.906 of the
+   unconditional loss): part of stage 3's loss floor was the model
+   hedging between digits, and a label removes it.
+2. **Guidance limits itself.** It trades variety for clarity, steadily,
+   variety 0.99 at w = 1 down to 0.81 at w = 8, but it didn't break at
+   w = 8, because what it amplifies, the difference between the
+   conditional and unconditional velocities, vanishes once a digit is
+   decided. It pushes while the image is undecided and hardly at all
+   after.
+3. **The noise decides the style, and the failures.** With the digit
+   fixed by the label, the starting noise still decides how it is
+   written (slant and thickness correlated 0.5 to 0.65 across digits
+   drawn from the same noise), and some noises make bad digits whatever
+   digit is asked for. Both hold across architectures, extending stage
+   3's finding that the noise-to-image map belongs to the data and the
+   method, not the model.
+4. **Instruments need the same care as predictions.** The classifier
+   was checked against memorizing before it was trusted; the first
+   overshoot count measured noise at the edge of the pixel range rather
+   than overshoot, and was caught only because its value for unguided
+   models was absurd; "confident" is an upper bound on "clear", since
+   the classifier has only seen real digits. A measurement needs a
+   mechanism and a check before it is believed, like a prediction.
+5. **The prediction convention worked, and showed what it can't do.**
+   Stated with mechanisms and numeric checks, six of eight predictions
+   were right (one with a caveat on position), one half right and one
+   narrowly wrong, against stage 3's two right, two half right and two
+   wrong. The two misses were both in the numeric checks themselves:
+   guidance's overshoot assumed the decision-time push lasts, and the
+   unconditional mode's assumed the shared weights carry over more than
+   they do. A check can be wrong too; what it gives is a stated
+   assumption, so a miss says exactly which piece of the reasoning
+   failed.
+6. **The cheap configuration was the right workhorse.** 7 × 7 and 4 × 4
+   agreed within 1.4 points on every measurement, at a third of the
+   cost (Decision 7).
 
 ## Stage 5: looking inside
 
