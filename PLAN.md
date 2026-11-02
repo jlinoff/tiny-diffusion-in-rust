@@ -65,6 +65,8 @@ names are explained where they first appear.
   - [Predictions](#predictions-3)
   - [What was built](#what-was-built-2)
   - [Running it](#running-it-3)
+  - [Stage 5 results](#stage-5-results)
+  - [What stage 5 taught](#what-stage-5-taught)
 - [Stage 6: text, later](#stage-6-text-later)
   - [Where it fits](#where-it-fits-5)
   - [How text diffusion works](#how-text-diffusion-works)
@@ -276,7 +278,7 @@ the example changes at every sampling step.
    4](#stage-4-conditioning-and-guidance)). The digit's class as a condition,
    and classifier-free guidance: "draw a 7", and what the guidance scale
    trades.
-5. **Looking inside** (optional; see [Stage 5](#stage-5-looking-inside)):
+5. **Looking inside** (done: see [Stage 5](#stage-5-looking-inside)):
    what the velocity field looks like at each t, which patches attend to
    which, and how early in generation the digit's identity is settled
    (stage 3's progress rows already answer that roughly: by t = 0.5).
@@ -1778,6 +1780,154 @@ this note says, before the run, why it may fail.
 | Command | What it does |
 |---|---|
 | `make inside` | all four probes on `digits` and `digits-cond-p4`: the tables, `out/inside-digits-preview.png`, `-attention.png` and the same for `digits-cond-p4` (a few minutes) |
+
+### Stage 5 results
+
+`make inside` on `digits` (no labels) and `digits-cond-p4` (labels, at
+w = 1), 200 generations of 50 Euler steps each, in 33 seconds for both:
+
+| | `digits` | `digits-cond-p4` |
+|---|---|---|
+| Guess at t = 0 against the mean image (relative distance) | 4.4% | 5.7% (the digit's mean) |
+| Guess already the final digit, at t = 0, 0.1, 0.2, 0.3, 0.5 | 9, 17, 62, 83, 97% | 94% from t = 0 (the label decides) |
+| Straightness, mean and least | 0.979, 0.962 | 0.982, 0.963 |
+| Share of the bending in the first half | 71% | 64% |
+| Attention distance at t = 0.1 and 0.9 (even spread 3.61) | 3.09, 3.29 | 3.22, 3.36 |
+
+Guidance's push, for `digits-cond-p4` (the closed form at t = 0, the
+distance between each digit's mean image and the overall mean: 6.42):
+
+| t | 0 | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 0.98 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Velocities apart | 6.47 | 7.24 | 7.35 | 6.16 | 4.42 | 2.86 | 1.87 | 1.29 | 0.91 | 0.70 | 1.14 |
+| Share of the t = 0 value | 101% | 113% | 115% | 96% | 69% | 45% | 29% | 20% | 14% | 11% | 18% |
+| Guesses apart | 6.47 | 6.51 | 5.88 | 4.31 | 2.65 | 1.43 | 0.75 | 0.39 | 0.18 | 0.07 | 0.02 |
+
+The preview grids: for each of eight generations, the model's guess of
+the finished image (upper row) and the velocity (lower row, grey 0,
+white brightening, black darkening), at t = 0, 1/8, …, 1. Left, without
+labels, all eight from the same noises as stage 3's grids; right, with
+labels, asked for 0 to 7 in turn. The sixth row on the right, asked for
+a 5, starts from the 5s' average and turns into a 6 between t = 0.25 and
+0.375: one of the 5% of generations at w = 1 that don't give the digit
+asked for, caught in the act.
+
+| `digits` (no labels) | `digits-cond-p4` (labels, w = 1) |
+|---|---|
+| ![Guesses and velocities along eight generations, no labels](docs/inside-digits-preview.png) | ![Guesses and velocities along eight generations, with labels](docs/inside-digits-cond-p4-preview.png) |
+
+- **1, the guess at t = 0 is the average image: right.** 4.4% from
+  MNIST's mean image without labels, 5.7% from the requested digit's
+  mean with them, inside the 10% predicted. In the grids, every
+  generation without labels starts from the same blurred blend of
+  digits, whatever its noise; with labels, each starts from a blurred
+  average of the digit asked for.
+- **2, the digit is decided by t = 0.5: half right; decided earlier.**
+  The curve starts at 9% (predicted about 10%) and passes 90% by t = 0.4,
+  but rises most steeply between t = 0.1 and 0.2 (17% to 62%), not
+  between 0.2 and 0.5: by t = 0.3, 83% of the guesses are already their
+  final digit. The check misled: it read the decision from stage 3's
+  progress grids, which show the noisy image, where a digit becomes
+  visible only around t = 0.4 to 0.5. The model's guess shows it much
+  earlier (column 3 of the left grid, t = 0.25): the decision is made
+  while the image still looks like static, and the noise hides it.
+- **3, guidance pushes early and stops: wrong as worded, for the reason
+  recorded before the run.** At t = 0 the velocities' difference matches
+  its closed form to within 1% (6.47 against 6.42). It then rises to
+  115% at t = 0.2, falls to 45% by t = 0.5 and 11% by t = 0.9 (predicted
+  under 20% and 5%), and rises again at the very end, 18% at t = 0.98:
+  the division by 1 − t magnifying a vanishing disagreement. The
+  guesses' difference, what guidance can still change in the finished
+  image, falls to 22% by t = 0.5 and 1% by t = 0.9. So stage 4's
+  explanation holds for what matters, guidance's effect on the image,
+  but not for the velocities, as the prediction had it. And guidance
+  pushes hardest at t = 0.1 to 0.2, the same interval in which the
+  model without labels decides its digit (probe 2): it pushes while the
+  digit is being decided.
+- **4, the paths are nearly straight, bending early: right.** Mean
+  straightness 0.979 and 0.982 (predicted 0.9 to 0.98; the second a
+  hair over), and 71% and 64% of the bending in the first half. The
+  velocity rows show it: after about t = 0.375 each generation's
+  velocity barely changes, a constant velocity being a straight line.
+  Each velocity image is the finished digit with the starting noise
+  subtracted, since the velocity of a straight path from x₀ to x₁ is
+  x₁ − x₀.
+- **5, attention reaches far early and stays near late: wrong, and
+  reversed.** Averaged over blocks and heads, attention reaches slightly
+  farther late than early (3.29 at t = 0.9 against 3.09 at t = 0.1, and
+  3.36 against 3.22 with labels), the opposite of the 20% predicted,
+  though below the even spread late, as predicted. What the table shows
+  instead is that the reach depends on the block, hardly on t: each
+  block keeps nearly the same distance all along the path, changing by
+  at most a tenth, while the blocks differ by more than half. Block 5 is
+  the most local (about 2.0 to 2.4 patches), and blocks 1 and 2 reach at
+  or beyond the even spread, looking across the whole image. The
+  coarse-to-fine story placed the change in time; the model places it
+  in depth, with the work divided between blocks, each with its own
+  reach, at every moment.
+
+Where the centre patch looks, for the first generation of each model
+(averaged over the four heads; white is where it looks most, black
+least; one row per block, 1 at the top, and one column per moment,
+t = 0.1, 0.3, 0.5, 0.7 and 0.9). Left, without labels, a generation that
+becomes a 7; right, with labels, asked for a 0.
+
+| `digits` (no labels) | `digits-cond-p4` (labels, w = 1) |
+|---|---|
+| ![Attention of the centre patch by block and t, no labels](docs/inside-digits-attention.png) | ![Attention of the centre patch by block and t, with labels](docs/inside-digits-cond-p4-attention.png) |
+
+The maps show what the attention distances only summarize: the blocks
+do different kinds of looking.
+
+- **Block 5 is a fixed stencil.** At every moment the centre patch looks
+  at a few of its immediate neighbours and nowhere else: its four
+  nearest (above, below, left, right) in the labelled model, three on
+  its left in the other. The pattern doesn't change with t or with the
+  image: attention, which could look anywhere, has learned to act like
+  a small convolution, a fixed local filter. Hence block 5's short
+  reach.
+- **Blocks 2 and 3 follow the strokes.** The centre patch looks at the
+  patches where the digit is, the 7's bar and stem on the left, the 0's
+  ring on the right, and the pattern sharpens along the path as the
+  digit does. This attention depends on the image's content, not on
+  position.
+- **Blocks 1 and 6 spread out late.** Diffuse early, then towards the
+  end looking over the background, nearly everywhere except the digit
+  (block 1 of the labelled model shows the 0 as a dark hole in bright
+  surroundings). That late spreading is most of why the average reach
+  grows slightly with t, the reverse of prediction 5.
+
+So a few blocks relate patches by where they are, others by what they
+hold, at every moment of the path.
+
+### What stage 5 taught
+
+1. **The closed forms hold inside a trained network.** At t = 0 the
+   model's guess is the average image to within 4 to 6%, and guidance's
+   push equals the distance between a digit's average and the overall
+   average to within 1%: exact statements from first principles, about
+   what a trained network computes, confirmed. The network has learned
+   what the mathematics says it must.
+2. **The decision comes long before it can be seen.** The model knows
+   which digit it is drawing by t = 0.2 to 0.3, while the image still
+   looks like static. What a generation looks like and what the model is
+   doing are different things, and stage 3's coarse-to-fine reading,
+   taken from the noisy images, dated the decision too late.
+3. **Measure the quantity that matters, not a proxy of it.** Prediction
+   3 was scored on the velocities' difference, but what guidance changes
+   in the image is the guesses' difference, which behaves differently
+   near the end. The shapes trial caught this before the run; writing it
+   down then is what let the miss be read at once.
+4. **Depth, not time, divides attention's work.** Each block keeps its
+   own kind of looking all along the path: one a fixed local stencil,
+   like a convolution, others following the strokes, others the
+   background. An intuition about stages of a process (coarse first,
+   fine later) was projected onto the network's layers, which organize
+   the work differently.
+5. **The paths are straight because the velocity is nearly constant.**
+   After the first third of the path, the velocity barely changes: the
+   generation is, for most of its length, a straight line at constant
+   speed, which is why ten Euler steps do nearly as well as fifty.
 
 ## Stage 6: text, later
 

@@ -11,7 +11,8 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: stage 4 of 6 done, images on request.** Stage 2 did flow
+**Status: stages 1 to 5 of 6 done: images on request, and a look
+inside.** Stage 2 did flow
 matching and DDPM (the original diffusion recipe) on 2D data, with plots
 of the samples, the paths from noise to data, and the learned velocity
 field. Stage 3 trains a 1.8-million-parameter diffusion transformer on
@@ -20,6 +21,8 @@ about an hour and a half on a laptop. Stage 4 tells it which digit to
 draw, with classifier-free guidance to strengthen the request (an extra
 push towards the requested digit, of a strength w set when sampling), and
 measures the results with a digit classifier built for the purpose.
+Stage 5 looks inside the trained models: what they are drawing at each
+moment, how straight their paths are, and where attention looks.
 Every stage arrives with its tests, and `make test` and continuous
 integration have run from the first commit.
 
@@ -71,6 +74,7 @@ make classifier     # stage 4: a digit classifier, the instrument that measures 
 make measure-stage3 # the classifier's verdict on stage 3's digit models
 make digits-cond    # the DiT told which digit to draw (7×7 patches): about half an hour
 make guidance       # how the guidance scale trades clarity for variety: a table and a grid per scale
+make inside         # stage 5: look inside the trained models: their guesses, paths, guidance's push, attention
 make test           # every check: the tests, a smoke test of every command, formatting, lint
 make help           # every target, and every variable with its value
 ```
