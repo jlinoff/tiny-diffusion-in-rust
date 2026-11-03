@@ -3439,6 +3439,43 @@ The variety is plain: half-formed dogs, a fox behind a fence, balloons
 that are tangles of colour. Stage 4's trade, clarity for variety, holds
 for photographs.
 
+**Prediction 6 (fewer steps): right at 25 and 10 steps, wrong at 4,
+which does better than predicted.** The same grid at 4, 10 and 25 DDIM
+steps (6, 11½ and 25 minutes), measured against the 50-step grid photo
+by photo: the mean difference in pixel values (0 to 255), and the
+detail, the mean step between neighbouring pixels:
+
+| Row | Difference from 50 steps: 4, 10, 25 steps | Detail: 4, 10, 25, 50 steps |
+|---|---|---|
+| golden retriever | 28.7, 14.1, 5.1 | 4.40, 5.02, 5.50, 5.69 |
+| Arctic fox | 30.5, 13.5, 6.0 | 4.53, 4.98, 5.34, 5.58 |
+| otter | 28.6, 18.6, 7.6 | 8.69, 9.36, 10.79, 11.25 |
+| red panda | 34.7, 20.3, 9.0 | 6.41, 8.47, 9.11, 9.69 |
+| geyser | 28.5, 11.1, 3.6 | 3.24, 3.59, 3.66, 3.70 |
+| macaw | 40.1, 26.8, 15.7 | 4.10, 7.19, 8.93, 9.43 |
+| valley | 26.6, 14.6, 6.9 | 9.74, 9.36, 9.88, 10.11 |
+| balloon | 30.4, 11.6, 4.6 | 1.88, 2.52, 3.03, 3.20 |
+
+- **25 steps look the same as 50** (as predicted): side by side at full
+  size, the same photographs, with detail within 1 to 6% of 50 steps'.
+- **10 steps are recognizable but softer** (as predicted): the same
+  composition in every photograph, the fine detail (fur, whiskers)
+  softened, 3 to 24% less detail (least for the geyser, most for the
+  macaw's feathers).
+- **4 steps don't fail** (predicted: smooth blobs of the right colours):
+  about 54 of 64 photographs are clearly their subject, soft and
+  painterly, like a watercolour of the 50-step photograph. What does
+  fail is what has nothing to show its outline early: balloons, sharp
+  objects against an empty sky, come out as overlapping translucent
+  shapes. (The valley row's 4-step detail is higher than its 10-step,
+  from blotches, not detail.)
+
+The paths are straighter than the prediction allowed, as stage 3 and
+stage 5 found for digits. And the step count changes the detail, not
+the picture: every photograph keeps its 50-step composition even at 4
+steps, so the arrangement is decided by the noise and the first steps,
+and later steps only refine it.
+
 **Not predicted: the noise decides the light.** Column 2 is dark in
 nearly every row of both grids (silhouettes against a sunset at w = 1,
 dark backgrounds behind the subject at w = 4), and column 1 pale and

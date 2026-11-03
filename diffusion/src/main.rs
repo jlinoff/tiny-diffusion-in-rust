@@ -2261,11 +2261,10 @@ fn dit_sample(
         std::fs::write(output.with_extension("txt"), legend)
             .map_err(|e| format!("can't write the legend: {e}"))?;
         println!(
-            "\r  row {} of {rows}: {class} {name}: generated in {} ({:.2} s a step), decoded in {dec_s:.1} s{}",
+            "\r\x1b[2K  row {} of {rows}: {class} {name}: generated in {} ({:.2} s a step), decoded in {dec_s:.1} s",
             k + 1,
             duration(gen_s),
             gen_s / steps as f64,
-            " ".repeat(20)
         );
     }
     println!(
@@ -2354,10 +2353,9 @@ fn dit_inside(
         },
     );
     println!(
-        "\r  generated in {}; decoding {} photographs{}",
+        "\r\x1b[2K  generated in {}; decoding {} photographs",
         duration(t0.elapsed().as_secs_f64()),
         noises * (shown.len() + 1),
-        " ".repeat(20)
     );
     // Rows are noises, columns moments then the finished photograph.
     let cols = guesses.len() + 1;
