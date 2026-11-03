@@ -2138,6 +2138,10 @@ fn dit_sample(
     let noise: Vec<f32> = (0..noises * per).map(|_| rng.normal() as f32).collect();
     println!("{DIT_CREDIT}");
     println!("{} classes × {noises} noises, guidance {guidance}, {steps} DDIM steps, {reference} arithmetic", wanted.len());
+    println!(
+        "Grid: a row per class (the ImageNet label the model is asked for: number, then name and synonyms),\n\
+         a column per starting noise (the same noise in every row); every cell a 256 × 256 photograph"
+    );
     let mut images: Vec<Mat<f32>> = Vec::new();
     let rows = wanted.len();
     let start = Instant::now();

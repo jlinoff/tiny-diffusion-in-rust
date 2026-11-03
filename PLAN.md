@@ -626,6 +626,28 @@ roughly where a point is going, late steps settle exactly where.
   how the same noise is turned into an image, and the difference between
   the grids is the training alone.
 
+**Photograph grids** (stage 7: `dit-sample`'s PNG files, e.g.
+`out/dit.png`, with a legend beside each, e.g. `out/dit.txt`):
+
+- **each cell is one 256 × 256 photograph** made by DiT-XL/2, decoded
+  from its latent.
+- **each row is one class**: the label the model is given, one of the
+  1,000 categories of ImageNet (the 1.3 million labelled photographs
+  DiT-XL/2 was trained on), numbered 0 to 999, just as stage 4's rows
+  each asked for one digit. In the log and the legend a row reads like
+  "207 golden retriever": the class number, then ImageNet's name for it,
+  which often lists synonyms ("Arctic fox, white fox, Alopex lagopus" is
+  one class, class 279). All eight photographs in a row are the model's
+  attempts at that one class.
+- **each column is one starting noise**, the same in every row: down a
+  column, the same noise is asked for each class in turn. In stage 4
+  the noise decided how a digit was written; here it may decide the
+  composition (where the subject sits, the light, the colours), and the
+  grid shows whether it does.
+- **the default classes** are the eight of the DiT paper's own sample
+  grid, so the two can be compared: golden retriever, Arctic fox,
+  otter, red panda, geyser, macaw, valley and balloon.
+
 **The habit that makes them useful: ask what changed between two panels,
 and what didn't.** The figures change one thing at a time (the steps, the
 sampler, the training), so each difference can be traced to its cause.
