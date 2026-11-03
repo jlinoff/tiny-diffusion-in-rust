@@ -2164,8 +2164,11 @@ fn dit_sample(
                     0.0
                 };
                 print!(
-                "\r  row {} of {rows} ({name}): step {done} of {steps}, {per_step:.1} s a step, about {} remaining   ",
+                "\r  row {} of {rows} ({name}): step {done} of {steps} ({} of {} in all, {:.0}%), {per_step:.1} s a step, about {} remaining   ",
                 k + 1,
+                k * steps + done,
+                rows * steps,
+                100.0 * (k * steps + done) as f64 / (rows * steps) as f64,
                 duration(per_step * steps_left as f64 + decode_left)
             );
                 let _ = std::io::Write::flush(&mut std::io::stdout());
@@ -2176,6 +2179,23 @@ fn dit_sample(
         images.push(decode_latents(&dec, &lat, c, s));
         let dec_s = t1.elapsed().as_secs_f64();
         decode_secs += dec_s;
+        // The grid so far and its legend, rewritten after every row, so a
+        // long run can be looked at as it goes and a stopped one keeps
+        // its finished rows.
+        write_rows(output, &images, noises)?;
+        let mut legend = format!(
+            "{}\n{DIT_CREDIT}\nguidance {guidance}, {steps} DDIM steps, seed {seed}, {reference} arithmetic\n\
+             rows, top to bottom (columns: {noises} starting noises, the same in every row):\n",
+            output.display()
+        );
+        for (i, (cl, nm)) in wanted.iter().take(k + 1).enumerate() {
+            legend.push_str(&format!("  {}: {cl} {nm}\n", i + 1));
+        }
+        if k + 1 < rows {
+            legend.push_str(&format!("  ({} of {rows} rows done)\n", k + 1));
+        }
+        std::fs::write(output.with_extension("txt"), legend)
+            .map_err(|e| format!("can't write the legend: {e}"))?;
         println!(
             "\r  row {} of {rows}: {class} {name}: generated in {} ({:.2} s a step), decoded in {dec_s:.1} s{}",
             k + 1,
@@ -2188,11 +2208,21 @@ fn dit_sample(
         "All {rows} rows in {}",
         duration(start.elapsed().as_secs_f64())
     );
+    println!(
+        "Wrote {} and its legend, {}",
+        output.display(),
+        output.with_extension("txt").display()
+    );
+    Ok(())
+}
+
+/// Rows of photographs (each a matrix of `noises` images) as one grid.
+fn write_rows(output: &Path, images: &[Mat<f32>], noises: usize) -> Result<(), String> {
     let width = images[0].cols;
     let all = Mat::from_vec(
         images.len() * noises,
         width,
-        images.into_iter().flat_map(|m| m.data).collect(),
+        images.iter().flat_map(|m| m.data.iter().copied()).collect(),
     );
     let side = image_side(width);
     let shape = mini_diffusion::image::Shape {
@@ -2200,9 +2230,7 @@ fn dit_sample(
         width: side,
         channels: 3,
     };
-    write_grid(output, &all, shape, noises, 1)?;
-    println!("Wrote {}", output.display());
-    Ok(())
+    write_grid(output, &all, shape, noises, 1)
 }
 
 #[allow(clippy::too_many_arguments)]

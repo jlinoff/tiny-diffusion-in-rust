@@ -512,6 +512,12 @@ when that work stopped. Here every stage arrives with its tests, and
 `make test` runs them all, as continuous integration does on every push.
 The properties that make a project testable are built in from the start:
 fixed seeds, results independent of the thread count, and exact resuming.
+And any command that can run longer than a minute reports its progress
+and the time remaining as it goes, and keeps what it has finished: a
+long run with no output can't be told from a hung one, and one that
+saves only at the end loses everything if it stops (stage 7's
+`dit-sample` rewrites its grid, and a legend saying what each row is,
+after every row).
 
 What each stage will test, beyond the gradient checks every new operation
 gets:
