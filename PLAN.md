@@ -3364,7 +3364,7 @@ loads the converted safetensors instead; the pickle is opened only by
 | `make dit-guidance` | the same grid at guidance 1 and 4 (prediction 5); the guidance-4 grid is `out/dit.png`, copied when its legend shows the same settings |
 | `make dit-steps` | the same grid at 4, 10 and 25 steps (prediction 6) |
 | `make dit-channels` | the golden retriever and balloon rows with guidance on 3 of the 4 channels, as the DiT repository's own sampler does |
-| `make dit-inside` | the decoded guess during the generation of four golden retrievers (prediction 7) |
+| `make dit-inside` | the decoded guess at 8 moments during the generation of eight golden retrievers, the same noises as the grids (prediction 7) |
 
 `DIT_CLASSES`, `DIT_NOISES`, `DIT_GUIDANCE` and `DIT_STEPS` change the
 grids; classes can be given by number or by name.

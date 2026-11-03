@@ -316,7 +316,7 @@ dit-channels: | $(DIFFUSION) $(OUT) ## Stage 7: DIT_C3_CLASSES with guidance on 
 
 dit-inside: | $(DIFFUSION) $(OUT) ## Stage 7: the model's guess of the finished photograph during generation (out/dit-inside.png).
 	$(call hdr,dit-inside)
-	$(DIFFUSION) dit-inside $(DIT_FILES) --class 207 --steps $(DIT_STEPS) --guidance $(DIT_GUIDANCE) -o $(OUT)/dit-inside.png
+	$(DIFFUSION) dit-inside $(DIT_FILES) --class 207 --noises $(DIT_NOISES) --steps $(DIT_STEPS) --guidance $(DIT_GUIDANCE) -o $(OUT)/dit-inside.png
 
 dit-fixtures: ## Stage 7, for development: rebuild the tiny random test models (needs PyTorch and diffusers).
 	python3 tools/stage7/fixtures.py diffusion/tests/data
