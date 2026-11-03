@@ -3657,9 +3657,12 @@ at the end); and research models narrow the gap from both sides.
 What it would take here: the decoder of stage 7 plus a codebook, a
 tokenizer's encoder, and tiny-llm-in-rust's transformer trained on the
 tokens of MNIST's digits instead of TinyStories' words. A digit of 28 ×
-28 pixels, cut into 4 × 4 patches, would be 49 tokens, a sentence. It
-isn't planned; it would be the two projects' meeting point from the
-other side.
+28 pixels, cut into 4 × 4 patches, would be 49 tokens, a sentence.
+Planned for after stage 7, in tiny-llm-in-rust, since it is a language
+model that draws: it would copy back the pieces stage 7 built (the
+convolutions and the decoder), as this project began by copying
+tiny-llm-in-rust's foundation, and be the two projects' meeting point
+from the other side.
 
 ## Decisions
 
