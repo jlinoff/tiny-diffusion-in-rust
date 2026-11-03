@@ -3353,9 +3353,9 @@ loads the converted safetensors instead; the pickle is opened only by
 | `make dit-download DIT_LICENSE=accept` | creates the Python environment under `models/`, downloads both models (3.3 GB and 335 MB) and converts them; prints the counts and the copies' check (prediction 1) |
 | `make dit-check` | the official code's outputs (`make dit-reference`, on the first run), then DiT-XL/2 and the decoder against them, number for number, with the time per pass (predictions 2 and 3) |
 | `make dit` | photographs of the eight sample classes, eight noises each, at guidance 4 and 50 steps, into `out/dit.png`: 1 to 1.6 hours by prediction 3 (prediction 4) |
-| `make dit-guidance` | the same grid at guidance 1 and 4 (predictions 5 and 8); the guidance-4 grid is `out/dit.png`, copied when its legend shows the same settings |
+| `make dit-guidance` | the same grid at guidance 1 and 4 (prediction 5); the guidance-4 grid is `out/dit.png`, copied when its legend shows the same settings |
 | `make dit-steps` | the same grid at 4, 10 and 25 steps (prediction 6) |
-| `make dit-channels` | the golden retriever and balloon rows with guidance on 3 of the 4 channels, as the DiT repository does (predictions 8 and 9) |
+| `make dit-channels` | the golden retriever and balloon rows with guidance on 3 of the 4 channels, as the DiT repository's own sampler does |
 | `make dit-inside` | the decoded guess during the generation of four golden retrievers (prediction 7) |
 
 `DIT_CLASSES`, `DIT_NOISES`, `DIT_GUIDANCE` and `DIT_STEPS` change the
@@ -3393,23 +3393,68 @@ guided pass of a row of 8 photographs (8 to 15 s predicted). The
 decoder took 2.4 s for one photograph (2 to 6 s predicted). The
 sampling runs will time it in use.
 
-**The grid's colours: a question raised by looking.** The photographs
-are recognizable, but many have flat patches of colour where a
-photograph has smooth gradients (the skies behind the balloons, the
-retrievers' fur). The likeliest cause, before any run tests it: guidance
-on all four latent channels at w = 4 pushes the latents outside what the
-decoder learned, and the DiT repository guides only three channels for
-this reason, among others. Predictions, written before the runs:
+**Prediction 3 in use: wrong on the fast side.** The grid of 64
+photographs ran at 6.6 to 6.8 s a step for each row of 8 (16 rows of
+the guided pass), against 8 to 15 s predicted, and took 47 minutes in
+all against the corrected 1 to 1.6 hours: larger batches use the M4
+better than the two-example pass the range was set from (0.39 against
+0.51 s per row). At guidance 1, with no unconditional pass, 3.4 s a
+step, exactly half. The decoder held at 2.4 s a photograph.
 
-8. **Guidance strength**: at w = 1 (`make dit-guidance`), the flat
-   patches are gone: smooth skies and fur in the same rows and columns.
-   Check: by eye, the balloon and golden retriever rows of the two grids.
-9. **The fourth channel**: with guidance on three channels at w = 4
-   (`make dit-channels`: the golden retriever and balloon rows), the
-   patches are fewer or gone. Check: by eye, against the same rows of
-   `out/dit.png`. If 8 holds and 9 doesn't, guidance strength is the
-   cause whatever the channels; if neither holds, the cause is
-   elsewhere (the decoder or the image writing), and comes next.
+**Prediction 4 (photographs of the class asked for): right.** Counted by
+eye, recorded before any other count was seen, with a SHA-256 (Secure Hash
+Algorithm) fingerprint of the file to show it unchanged. The count:
+63 of 64 recognizably their class, every row at least 7 of 8. The
+one miss is the geyser row's first photograph, a white wash of steam
+with no clear geyser. Otters come as both river and sea otters, as in
+ImageNet's own photographs, and two photographs carry the ghost of a
+watermark, learned from the training photographs.
+
+**Prediction 5 (guidance 1): wrong as worded, right in direction.**
+The same noises at w = 1, counted the same way:
+
+| Row | Guidance 1 | Guidance 4 |
+|---|---|---|
+| golden retriever | 5 | 8 |
+| Arctic fox | 3 | 8 |
+| otter | 4 | 8 |
+| red panda | 4 | 8 |
+| geyser | 6 | 7 |
+| macaw | 7 | 8 |
+| valley | 6 | 8 |
+| balloon | 4 | 8 |
+| total | 39 of 64 | 63 of 64 |
+
+"At most 5 of every 8" fails for the geyser, macaw and valley rows:
+classes distinctive in their colours and shapes emerge even unguided.
+The variety is plain: half-formed dogs, a fox behind a fence, balloons
+that are tangles of colour. Stage 4's trade, clarity for variety, holds
+for photographs.
+
+**Not predicted: the noise decides the light.** Column 2 is dark in
+nearly every row of both grids (silhouettes against a sunset at w = 1,
+dark backgrounds behind the subject at w = 4), and column 1 pale and
+washed in both. The starting noise sets the overall brightness and
+colour, the coarsest content of the picture, whatever the class: stage
+4's finding that the noise decided the handwriting, and stage 5's that
+the large structure is settled first, at full scale.
+
+**Reproducible**: `make dit-guidance` made its guidance-4 grid again,
+47 minutes later in a new process, and it is byte for byte the same as
+`make dit`'s.
+
+**A question withdrawn.** Looking at the grid, flat patches of colour
+seemed to replace smooth gradients (balloon skies, fur), and two
+predictions were written to find the cause (guidance strength, or
+guidance on the fourth latent channel). At full resolution there are no
+such patches: the gradients are smooth, and a 64 × 64 patch of sky
+holds 1,155 distinct colours in a guidance-4 photograph and 2,514 in a
+guidance-1 sunset. The patches were in the reduced copy of the
+2,000-pixel grid they were judged from, not in the photographs. The
+two predictions are withdrawn untested, and the lesson is stage 6's:
+measure before calling something a finding. (`--guide-channels`, built
+for the test, stays: it is tested, and reproduces the DiT repository's
+own sampler.)
 
 ## How far could this go?
 
