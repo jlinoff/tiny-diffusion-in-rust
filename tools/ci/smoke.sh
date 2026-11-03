@@ -58,6 +58,9 @@ TINY="--dit diffusion/tests/data/dit-tiny.safetensors --vae diffusion/tests/data
 $D dit-check $TINY --dit-reference diffusion/tests/data/dit-tiny.safetensors \
     --vae-reference diffusion/tests/data/vae-tiny.safetensors > /dev/null
 $D dit-sample $TINY --classes 1,2 --noises 2 --steps 3 -o "$T/dit.png" > /dev/null
+$D dit-sample $TINY --classes 1,2 --noises 2 --steps 3 --same-as "$T/dit.png" -o "$T/dit-same.png" | grep -q "copied it"
+cmp -s "$T/dit.png" "$T/dit-same.png"
+$D dit-sample $TINY --classes 1 --noises 1 --steps 2 --guide-channels 3 -o "$T/dit-c3.png" > /dev/null
 $D dit-inside $TINY --class 3 --noises 2 --moments 2 --steps 3 -o "$T/dit-inside.png" > /dev/null
 python3 -c 'import sys; sys.exit(open(sys.argv[1], "rb").read(8) != b"\x89PNG\r\n\x1a\n")' "$T/dit.png"
 step "train-text --rope, and sample-text from it"

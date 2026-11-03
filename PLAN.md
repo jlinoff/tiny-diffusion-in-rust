@@ -3353,8 +3353,9 @@ loads the converted safetensors instead; the pickle is opened only by
 | `make dit-download DIT_LICENSE=accept` | creates the Python environment under `models/`, downloads both models (3.3 GB and 335 MB) and converts them; prints the counts and the copies' check (prediction 1) |
 | `make dit-check` | the official code's outputs (`make dit-reference`, on the first run), then DiT-XL/2 and the decoder against them, number for number, with the time per pass (predictions 2 and 3) |
 | `make dit` | photographs of the eight sample classes, eight noises each, at guidance 4 and 50 steps, into `out/dit.png`: 1 to 1.6 hours by prediction 3 (prediction 4) |
-| `make dit-guidance` | the same grid at guidance 1 and 4 (prediction 5) |
+| `make dit-guidance` | the same grid at guidance 1 and 4 (predictions 5 and 8); the guidance-4 grid is `out/dit.png`, copied when its legend shows the same settings |
 | `make dit-steps` | the same grid at 4, 10 and 25 steps (prediction 6) |
+| `make dit-channels` | the golden retriever and balloon rows with guidance on 3 of the 4 channels, as the DiT repository does (predictions 8 and 9) |
 | `make dit-inside` | the decoded guess during the generation of four golden retrievers (prediction 7) |
 
 `DIT_CLASSES`, `DIT_NOISES`, `DIT_GUIDANCE` and `DIT_STEPS` change the
@@ -3391,6 +3392,24 @@ second (130 to 240 predicted), which projects to about 8 s for the
 guided pass of a row of 8 photographs (8 to 15 s predicted). The
 decoder took 2.4 s for one photograph (2 to 6 s predicted). The
 sampling runs will time it in use.
+
+**The grid's colours: a question raised by looking.** The photographs
+are recognizable, but many have flat patches of colour where a
+photograph has smooth gradients (the skies behind the balloons, the
+retrievers' fur). The likeliest cause, before any run tests it: guidance
+on all four latent channels at w = 4 pushes the latents outside what the
+decoder learned, and the DiT repository guides only three channels for
+this reason, among others. Predictions, written before the runs:
+
+8. **Guidance strength**: at w = 1 (`make dit-guidance`), the flat
+   patches are gone: smooth skies and fur in the same rows and columns.
+   Check: by eye, the balloon and golden retriever rows of the two grids.
+9. **The fourth channel**: with guidance on three channels at w = 4
+   (`make dit-channels`: the golden retriever and balloon rows), the
+   patches are fewer or gone. Check: by eye, against the same rows of
+   `out/dit.png`. If 8 holds and 9 doesn't, guidance strength is the
+   cause whatever the channels; if neither holds, the cause is
+   elsewhere (the decoder or the image writing), and comes next.
 
 ## How far could this go?
 

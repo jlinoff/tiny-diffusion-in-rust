@@ -366,6 +366,25 @@ pub fn generate(
     guidance: f32,
     steps: usize,
     r: Reference,
+    on_step: impl FnMut(usize, &[f32]),
+) -> Vec<f32> {
+    let all = model.cfg.in_channels;
+    generate_guided(model, noise, labels, guidance, all, steps, r, on_step)
+}
+
+/// `generate`, with guidance applied to the first `guide_channels` of ε's
+/// channels only; the rest take the conditional prediction alone. The DiT
+/// repository's own sampler, by default, guides 3 of the 4 (PLAN.md,
+/// stage 7).
+#[allow(clippy::too_many_arguments)]
+pub fn generate_guided(
+    model: &DitXl,
+    noise: &[f32],
+    labels: &[usize],
+    guidance: f32,
+    guide_channels: usize,
+    steps: usize,
+    r: Reference,
     mut on_step: impl FnMut(usize, &[f32]),
 ) -> Vec<f32> {
     let sched = crate::ddpm::Schedule::linear(1000);
@@ -396,9 +415,17 @@ pub fn generate(
                 per,
             );
             let (ec, eu) = e.split_at(batch * per);
+            let area = model.cfg.size * model.cfg.size;
             ec.iter()
                 .zip(eu)
-                .map(|(c, u)| u + guidance * (c - u))
+                .enumerate()
+                .map(|(j, (c, u))| {
+                    if (j % per) / area < guide_channels {
+                        u + guidance * (c - u)
+                    } else {
+                        *c
+                    }
+                })
                 .collect()
         };
         let (ab, abp) = (sched.alpha_bar[i], sched.alpha_bar[prev]);

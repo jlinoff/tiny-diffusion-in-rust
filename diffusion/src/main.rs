@@ -447,6 +447,14 @@ enum Command {
         /// training) or diffusers.
         #[arg(long, default_value = "original", value_parser = ["original", "diffusers"])]
         reference: String,
+        /// Guide only the first n of ε's channels (the DiT repository's own
+        /// sampler guides 3 of 4); 0 means all.
+        #[arg(long, default_value_t = 0)]
+        guide_channels: usize,
+        /// A grid made earlier: if its legend shows the same settings and
+        /// rows, copy it instead of generating again.
+        #[arg(long)]
+        same_as: Option<PathBuf>,
         #[arg(short, long, default_value = "out/dit.png")]
         output: PathBuf,
     },
@@ -1263,9 +1271,18 @@ fn run(command: Command) -> Result<(), String> {
             steps,
             seed,
             reference,
+            guide_channels,
+            same_as,
             output,
         } => dit_sample(
-            &dit, &vae, &classes, &names, noises, guidance, steps, seed, &reference, &output,
+            &dit,
+            &vae,
+            &classes,
+            &names,
+            (noises, guidance, guide_channels, steps, seed),
+            &reference,
+            same_as.as_deref(),
+            &output,
         ),
         Command::DitInside {
             dit,
@@ -2108,20 +2125,45 @@ fn image_side(pixels: usize) -> usize {
     ((pixels / 3) as f64).sqrt().round() as usize
 }
 
+/// dit-sample's numbers: noises, guidance, channels guided (0: all),
+/// steps, seed.
+type SampleSettings = (usize, f32, usize, usize, u64);
+
+/// A grid's legend: its file, the credit, the settings, and the rows
+/// done so far, top to bottom.
+fn dit_legend(
+    output: &Path,
+    settings: &str,
+    wanted: &[(usize, String)],
+    done: usize,
+    noises: usize,
+) -> String {
+    let mut legend = format!(
+        "{}\n{DIT_CREDIT}\n{settings}\n\
+         rows, top to bottom (columns: {noises} starting noises, the same in every row):\n",
+        output.display()
+    );
+    for (i, (cl, nm)) in wanted.iter().take(done).enumerate() {
+        legend.push_str(&format!("  {}: {cl} {nm}\n", i + 1));
+    }
+    if done < wanted.len() {
+        legend.push_str(&format!("  ({done} of {} rows done)\n", wanted.len()));
+    }
+    legend
+}
+
 #[allow(clippy::too_many_arguments)]
 fn dit_sample(
     dit: &Path,
     vae: &Path,
     classes: &str,
     names: &Path,
-    noises: usize,
-    guidance: f32,
-    steps: usize,
-    seed: u64,
+    (noises, guidance, guide_channels, steps, seed): SampleSettings,
     reference: &str,
+    same_as: Option<&Path>,
     output: &Path,
 ) -> Result<(), String> {
-    use mini_diffusion::ditxl::{generate, Reference};
+    use mini_diffusion::ditxl::{generate_guided, Reference};
     check_writable(output)?;
     let (model, dec) = load_dit(dit, vae)?;
     let wanted = parse_classes(classes, names, model.cfg.classes)?;
@@ -2131,13 +2173,40 @@ fn dit_sample(
         Reference::Original
     };
     let (c, s) = (model.cfg.in_channels, model.cfg.size);
+    let gc = if guide_channels == 0 {
+        c
+    } else {
+        guide_channels.min(c)
+    };
+    let settings = format!(
+        "guidance {guidance} on {gc} of {c} channels, {steps} DDIM steps, seed {seed}, {reference} arithmetic"
+    );
+    // A matching grid made earlier: the same settings and rows, all done.
+    if let Some(prev) = same_as {
+        let body = |t: &str| t.lines().skip(1).collect::<Vec<_>>().join("\n");
+        let want = dit_legend(output, &settings, &wanted, wanted.len(), noises);
+        if let Ok(old) = std::fs::read_to_string(prev.with_extension("txt")) {
+            if body(&old) == body(&want) && prev.exists() {
+                std::fs::copy(prev, output)
+                    .map_err(|e| format!("can't copy {}: {e}", prev.display()))?;
+                std::fs::write(output.with_extension("txt"), want)
+                    .map_err(|e| format!("can't write the legend: {e}"))?;
+                println!(
+                    "{} has the same settings and rows: copied it to {}",
+                    prev.display(),
+                    output.display()
+                );
+                return Ok(());
+            }
+        }
+    }
     let per = c * s * s;
     // The same noises for every class, so a column shows one noise asked
     // for each class.
     let mut rng = Rng::new(seed);
     let noise: Vec<f32> = (0..noises * per).map(|_| rng.normal() as f32).collect();
     println!("{DIT_CREDIT}");
-    println!("{} classes × {noises} noises, guidance {guidance}, {steps} DDIM steps, {reference} arithmetic", wanted.len());
+    println!("{} classes × {noises} noises, {settings}", wanted.len());
     println!(
         "Grid: a row per class (the ImageNet label the model is asked for: number, then name and synonyms),\n\
          a column per starting noise (the same noise in every row); every cell a 256 × 256 photograph"
@@ -2148,11 +2217,12 @@ fn dit_sample(
     let mut decode_secs = 0.0; // decoding time so far, for the estimate
     for (k, (class, name)) in wanted.iter().enumerate() {
         let t0 = Instant::now();
-        let lat = generate(
+        let lat = generate_guided(
             &model,
             &noise,
             &vec![*class; noises],
             guidance,
+            gc,
             steps,
             r,
             |step, _| {
@@ -2187,17 +2257,7 @@ fn dit_sample(
         // long run can be looked at as it goes and a stopped one keeps
         // its finished rows.
         write_rows(output, &images, noises)?;
-        let mut legend = format!(
-            "{}\n{DIT_CREDIT}\nguidance {guidance}, {steps} DDIM steps, seed {seed}, {reference} arithmetic\n\
-             rows, top to bottom (columns: {noises} starting noises, the same in every row):\n",
-            output.display()
-        );
-        for (i, (cl, nm)) in wanted.iter().take(k + 1).enumerate() {
-            legend.push_str(&format!("  {}: {cl} {nm}\n", i + 1));
-        }
-        if k + 1 < rows {
-            legend.push_str(&format!("  ({} of {rows} rows done)\n", k + 1));
-        }
+        let legend = dit_legend(output, &settings, &wanted, k + 1, noises);
         std::fs::write(output.with_extension("txt"), legend)
             .map_err(|e| format!("can't write the legend: {e}"))?;
         println!(

@@ -250,6 +250,8 @@ llm-stories: | $(OUT) ## Stage 6: 8 stories from tiny-llm-in-rust's trained mode
 	done > $(TEXT_AR_SAMPLES)
 	@echo "wrote $(TEXT_AR_SAMPLES)"
 
+# dit-guidance and dit-steps reuse out/dit.png for a grid with the same
+# settings (its legend, out/dit.txt, says), rather than make it again.
 # Stage 7 (PLAN.md): DiT-XL/2 and its autoencoder, downloaded from their
 # own sources under their own licences (DiT-XL/2: CC BY-NC 4.0,
 # non-commercial use only), into MODELS, never into git. make dit-download
@@ -263,6 +265,7 @@ DIT_CLASSES  ?= 207,279,360,387,974,88,979,417
 DIT_NOISES   ?= 8
 DIT_GUIDANCE ?= 4
 DIT_STEPS    ?= 50
+DIT_C3_CLASSES ?= 207,417
 DIT_PY       := $(MODELS)/venv/bin/python3
 DIT_FILES    := --dit $(MODELS)/dit-xl-2-256.safetensors --vae $(MODELS)/sd-vae-ft-ema-decoder.safetensors \
 	--names $(MODELS)/imagenet_classes.txt
@@ -272,7 +275,7 @@ $(DIT_PY):
 	python3 -m venv $(MODELS)/venv
 	$(MODELS)/venv/bin/pip install -r tools/stage7/requirements.txt
 
-.PHONY: dit-download dit-reference dit-check dit dit-guidance dit-steps dit-inside dit-fixtures
+.PHONY: dit-download dit-reference dit-check dit dit-guidance dit-steps dit-channels dit-inside dit-fixtures
 dit-download: | $(DIT_PY) ## Stage 7: show the models' licences; with DIT_LICENSE=accept, download and convert them.
 	$(call hdr,dit-download)
 	DIT_LICENSE=$(DIT_LICENSE) $(DIT_PY) tools/stage7/download.py $(MODELS)
@@ -297,14 +300,19 @@ dit: | $(DIFFUSION) $(OUT) ## Stage 7: photographs of DIT_CLASSES, DIT_NOISES ea
 dit-guidance: | $(DIFFUSION) $(OUT) ## Stage 7: the same grid at guidance 1 and 4 (out/dit-w1.png, out/dit-w4.png).
 	for w in 1 4; do \
 		$(DIFFUSION) dit-sample $(DIT_FILES) --classes '$(DIT_CLASSES)' --noises $(DIT_NOISES) \
-			--guidance $$w --steps $(DIT_STEPS) -o $(OUT)/dit-w$$w.png || exit 1; \
+			--guidance $$w --steps $(DIT_STEPS) --same-as $(OUT)/dit.png -o $(OUT)/dit-w$$w.png || exit 1; \
 	done
 
 dit-steps: | $(DIFFUSION) $(OUT) ## Stage 7: the same grid at 4, 10 and 25 DDIM steps (out/dit-s4.png …).
 	for s in 4 10 25; do \
 		$(DIFFUSION) dit-sample $(DIT_FILES) --classes '$(DIT_CLASSES)' --noises $(DIT_NOISES) \
-			--guidance $(DIT_GUIDANCE) --steps $$s -o $(OUT)/dit-s$$s.png || exit 1; \
+			--guidance $(DIT_GUIDANCE) --steps $$s --same-as $(OUT)/dit.png -o $(OUT)/dit-s$$s.png || exit 1; \
 	done
+
+dit-channels: | $(DIFFUSION) $(OUT) ## Stage 7: DIT_C3_CLASSES with guidance on 3 of the 4 channels, as the DiT repository does (out/dit-c3.png).
+	$(call hdr,dit-sample: guidance on 3 channels)
+	$(DIFFUSION) dit-sample $(DIT_FILES) --classes '$(DIT_C3_CLASSES)' --noises $(DIT_NOISES) \
+		--guidance $(DIT_GUIDANCE) --guide-channels 3 --steps $(DIT_STEPS) -o $(OUT)/dit-c3.png
 
 dit-inside: | $(DIFFUSION) $(OUT) ## Stage 7: the model's guess of the finished photograph during generation (out/dit-inside.png).
 	$(call hdr,dit-inside)
@@ -383,7 +391,7 @@ clean: ## Remove generated files (keeps data/).
 # here and a HELP_ description.
 HELP_VARS := OUT CARGO_FEATURES TRAIN2D_ARGS IMG_ARGS SHAPES_ARGS PEEK_MODEL \
 	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS LLM_OUT TEXT_STEPS TEXT_ARGS \
-	TEXT_AR_SAMPLES MODELS DIT_LICENSE DIT_CLASSES DIT_NOISES DIT_GUIDANCE DIT_STEPS \
+	TEXT_AR_SAMPLES MODELS DIT_LICENSE DIT_CLASSES DIT_NOISES DIT_GUIDANCE DIT_STEPS DIT_C3_CLASSES \
 	URL_mnist URL_fashion
 HELP_OUT             := where models, plots and images are written
 HELP_CARGO_FEATURES  := blas: Apple Accelerate for large matrix products (default on macOS); empty: plain Rust
@@ -406,6 +414,7 @@ HELP_DIT_CLASSES     := ImageNet classes for make dit and friends, by number or 
 HELP_DIT_NOISES      := starting noises per class: the grid's columns
 HELP_DIT_GUIDANCE    := classifier-free guidance scale for make dit, dit-steps and dit-inside
 HELP_DIT_STEPS       := DDIM steps for make dit, dit-guidance and dit-inside
+HELP_DIT_C3_CLASSES  := the classes make dit-channels draws with guidance on 3 channels (default: golden retriever and balloon)
 HELP_URL_fashion     := where Fashion-MNIST is downloaded from
 
 # A value inside single quotes, with any single quote in it escaped.
