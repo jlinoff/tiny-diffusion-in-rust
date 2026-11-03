@@ -1,8 +1,5 @@
 # tiny-diffusion-in-rust: a small diffusion model, built from scratch to learn how image generation works
 
-[![Release](https://img.shields.io/github/v/release/jlinoff/tiny-diffusion-in-rust)](https://github.com/jlinoff/tiny-diffusion-in-rust/releases)
-[![Workflow](https://github.com/jlinoff/tiny-diffusion-in-rust/actions/workflows/main.yaml/badge.svg)](https://github.com/jlinoff/tiny-diffusion-in-rust/actions/workflows/main.yaml)
-
 This project builds a diffusion model by hand, in Rust with no
 machine-learning framework, small enough to read and to run on a laptop: the
 kind of model that turns random noise into an image by many small steps. It
@@ -16,7 +13,7 @@ matrices, automatic differentiation and model files.
 
 **Status: six stages done (images on request, a look inside, and a
 diffusion language model); stage 7, running a full-scale trained model
-through this code, is planned.** Stage 2 did flow
+through this code, is built and awaiting its first run.** Stage 2 did flow
 matching and DDPM (the original diffusion recipe) on 2D data, with plots
 of the samples, the paths from noise to data, and the learned velocity
 field. Stage 3 trains a 1.8-million-parameter diffusion transformer on
@@ -84,6 +81,8 @@ make guidance       # how the guidance scale trades clarity for variety: a table
 make inside         # stage 5: look inside the trained models: their guesses, paths, guidance's push, attention
 make text           # stage 6: a masked diffusion language model on tiny-llm-in-rust's stories, beside its model: about 35 minutes
 make text-sample    # its stories at 16, 64 and 256 steps in two orders, infilled stories, and the text measures
+make dit-download   # stage 7: show DiT-XL/2's licence; with DIT_LICENSE=accept, download it (non-commercial use only)
+make dit            # photographs from DiT-XL/2 through this project's code: an hour or more
 make test           # every check: the tests, a smoke test of every command, formatting, lint
 make help           # every target, and every variable with its value
 ```
@@ -96,7 +95,7 @@ The plots are SVG (Scalable Vector Graphics) files and the images PNG
 MIT: see [LICENSE](LICENSE). This is meant for learning; use it freely.
 
 The repository holds no trained weights from anyone else. Stage 7
-(planned) will download two models from their own sources, each under
+downloads two models from their own sources, each under
 its own licence: DiT-XL/2 under CC BY-NC 4.0 (non-commercial use only)
 and its autoencoder under MIT. PLAN.md, Stage 7, sets out the terms
 before any of it is built.

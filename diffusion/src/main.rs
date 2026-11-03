@@ -419,6 +419,78 @@ enum Command {
         #[arg(long, default_value_t = 1.0)]
         guidance: f32,
     },
+    /// Stage 7: photographs from DiT-XL/2 and its decoder, downloaded and
+    /// converted by make dit-download (non-commercial use only: PLAN.md,
+    /// Stage 7). A row per class, a column per starting noise.
+    DitSample {
+        #[arg(long, default_value = "models/dit-xl-2-256.safetensors")]
+        dit: PathBuf,
+        #[arg(long, default_value = "models/sd-vae-ft-ema-decoder.safetensors")]
+        vae: PathBuf,
+        /// Classes, by number or by name from --names, comma-separated.
+        #[arg(long, default_value = "207,279,360,387,974,88,979,417")]
+        classes: String,
+        /// The 1,000 ImageNet class names, one per line (written by make
+        /// dit-download).
+        #[arg(long, default_value = "models/imagenet_classes.txt")]
+        names: PathBuf,
+        /// Starting noises: the columns.
+        #[arg(long, default_value_t = 8)]
+        noises: usize,
+        #[arg(long, default_value_t = 4.0)]
+        guidance: f32,
+        #[arg(long, default_value_t = 50)]
+        steps: usize,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Whose arithmetic: original (the DiT repository's, the model's
+        /// training) or diffusers.
+        #[arg(long, default_value = "original", value_parser = ["original", "diffusers"])]
+        reference: String,
+        #[arg(short, long, default_value = "out/dit.png")]
+        output: PathBuf,
+    },
+    /// Stage 7: the model's guess of the finished photograph during one
+    /// generation, decoded at several steps (stage 5's preview at full
+    /// scale). A row per noise, a column per moment, the finished
+    /// photograph last.
+    DitInside {
+        #[arg(long, default_value = "models/dit-xl-2-256.safetensors")]
+        dit: PathBuf,
+        #[arg(long, default_value = "models/sd-vae-ft-ema-decoder.safetensors")]
+        vae: PathBuf,
+        #[arg(long, default_value = "207")]
+        class: String,
+        #[arg(long, default_value = "models/imagenet_classes.txt")]
+        names: PathBuf,
+        #[arg(long, default_value_t = 4)]
+        noises: usize,
+        /// Moments shown, evenly spaced through the steps.
+        #[arg(long, default_value_t = 8)]
+        moments: usize,
+        #[arg(long, default_value_t = 4.0)]
+        guidance: f32,
+        #[arg(long, default_value_t = 50)]
+        steps: usize,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(short, long, default_value = "out/dit-inside.png")]
+        output: PathBuf,
+    },
+    /// Stage 7: DiT-XL/2 and its decoder against the official code's
+    /// outputs (tools/stage7/reference.py), number for number, with
+    /// diffusers' arithmetic; and the time per pass (PLAN.md, Stage 7,
+    /// predictions 2 and 3).
+    DitCheck {
+        #[arg(long, default_value = "models/dit-xl-2-256.safetensors")]
+        dit: PathBuf,
+        #[arg(long, default_value = "models/sd-vae-ft-ema-decoder.safetensors")]
+        vae: PathBuf,
+        #[arg(long, default_value = "models/reference-dit.safetensors")]
+        dit_reference: PathBuf,
+        #[arg(long, default_value = "models/reference-vae.safetensors")]
+        vae_reference: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -1181,6 +1253,40 @@ fn run(command: Command) -> Result<(), String> {
             println!("Wrote {}", output.display());
             Ok(())
         }
+        Command::DitSample {
+            dit,
+            vae,
+            classes,
+            names,
+            noises,
+            guidance,
+            steps,
+            seed,
+            reference,
+            output,
+        } => dit_sample(
+            &dit, &vae, &classes, &names, noises, guidance, steps, seed, &reference, &output,
+        ),
+        Command::DitInside {
+            dit,
+            vae,
+            class,
+            names,
+            noises,
+            moments,
+            guidance,
+            steps,
+            seed,
+            output,
+        } => dit_inside(
+            &dit, &vae, &class, &names, noises, moments, guidance, steps, seed, &output,
+        ),
+        Command::DitCheck {
+            dit,
+            vae,
+            dit_reference,
+            vae_reference,
+        } => dit_check(&dit, &vae, &dit_reference, &vae_reference),
         Command::SampleText {
             model,
             tokenizer,
@@ -1876,5 +1982,361 @@ fn write_file(path: &Path, text: &str) -> Result<(), String> {
     check_writable(path)?;
     std::fs::write(path, text).map_err(|e| format!("can't write {}: {e}", path.display()))?;
     println!("Wrote {}", path.display());
+    Ok(())
+}
+
+/// The credit printed with everything stage 7 makes (PLAN.md, Stage 7:
+/// the terms of the models' use).
+const DIT_CREDIT: &str = "DiT-XL/2: Peebles and Xie (2023), facebook/DiT-XL-2-256, CC BY-NC 4.0 (non-commercial use only); \
+autoencoder: stabilityai/sd-vae-ft-ema, MIT";
+
+fn missing_models(path: &Path) -> String {
+    format!(
+        "{}: not found. Stage 7's models are downloaded, under their own licences, by\n  \
+         make dit-download DIT_LICENSE=accept\n(PLAN.md, Stage 7, sets out the terms)",
+        path.display()
+    )
+}
+
+/// DiT-XL/2 and its decoder, from the converted files.
+fn load_dit(
+    dit: &Path,
+    vae: &Path,
+) -> Result<(mini_diffusion::ditxl::DitXl, mini_diffusion::vae::Decoder), String> {
+    use mini_diffusion::ditxl::{DitXl, DitXlConfig};
+    use mini_diffusion::vae::{Decoder, VaeConfig};
+    for p in [dit, vae] {
+        if !p.exists() {
+            return Err(missing_models(p));
+        }
+    }
+    let t0 = Instant::now();
+    let df = safetensors::read(dit)?;
+    let cfg = DitXlConfig::from_json(
+        df.metadata
+            .get("config")
+            .ok_or(format!("{}: no config in its metadata", dit.display()))?,
+    )?;
+    let model = DitXl::load(&df, cfg).map_err(|e| format!("{}: {e}", dit.display()))?;
+    drop(df);
+    let vf = safetensors::read(vae)?;
+    let vcfg = VaeConfig::from_json(
+        vf.metadata
+            .get("config")
+            .ok_or(format!("{}: no config in its metadata", vae.display()))?,
+    )?;
+    let dec = Decoder::load(&vf, vcfg).map_err(|e| format!("{}: {e}", vae.display()))?;
+    println!(
+        "Loaded the DiT ({} blocks, width {}, {} classes) and the decoder in {:.1} s",
+        model.cfg.blocks,
+        model.cfg.width,
+        model.cfg.classes,
+        t0.elapsed().as_secs_f64()
+    );
+    Ok((model, dec))
+}
+
+/// Classes by number or by name (a whole line of the names file, or the
+/// first name on it, case ignored).
+fn parse_classes(list: &str, names: &Path, classes: usize) -> Result<Vec<(usize, String)>, String> {
+    let table: Vec<String> = std::fs::read_to_string(names)
+        .map(|t| t.lines().map(str::to_string).collect())
+        .unwrap_or_default();
+    let name_of = |i: usize| {
+        table
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| format!("class {i}"))
+    };
+    list.split(',')
+        .map(|item| {
+            let item = item.trim();
+            if let Ok(i) = item.parse::<usize>() {
+                return if i < classes {
+                    Ok((i, name_of(i)))
+                } else {
+                    Err(format!(
+                        "class {i}: the model has {classes} classes (0 to {})",
+                        classes - 1
+                    ))
+                };
+            }
+            let want = item.to_lowercase();
+            table
+                .iter()
+                .position(|line| {
+                    let l = line.to_lowercase();
+                    l == want || l.split(',').next().map(str::trim) == Some(want.as_str())
+                })
+                .map(|i| (i, name_of(i)))
+                .ok_or(format!("no class named {item:?} in {}", names.display()))
+        })
+        .collect()
+}
+
+/// Latents decoded to pixels, each image's rows of interleaved RGB.
+fn decode_latents(
+    dec: &mini_diffusion::vae::Decoder,
+    latents: &[f32],
+    c: usize,
+    s: usize,
+) -> Mat<f32> {
+    use mini_diffusion::conv::Feature;
+    let per = c * s * s;
+    let n = latents.len() / per;
+    let mut rows: Vec<Vec<f32>> = Vec::new();
+    for e in 0..n {
+        let z: Vec<f32> = latents[e * per..(e + 1) * per]
+            .iter()
+            .map(|v| v / mini_diffusion::vae::SCALING)
+            .collect();
+        let img = dec.decode(&Feature::new(c, s, s, z));
+        let hw = img.h * img.w;
+        let mut px = vec![0.0; hw * 3];
+        for p in 0..hw {
+            for ch in 0..3 {
+                px[p * 3 + ch] = img.data[ch * hw + p];
+            }
+        }
+        rows.push(px);
+    }
+    let width = rows.first().map(Vec::len).unwrap_or(0);
+    Mat::from_vec(n, width, rows.concat())
+}
+
+fn image_side(pixels: usize) -> usize {
+    ((pixels / 3) as f64).sqrt().round() as usize
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dit_sample(
+    dit: &Path,
+    vae: &Path,
+    classes: &str,
+    names: &Path,
+    noises: usize,
+    guidance: f32,
+    steps: usize,
+    seed: u64,
+    reference: &str,
+    output: &Path,
+) -> Result<(), String> {
+    use mini_diffusion::ditxl::{generate, Reference};
+    check_writable(output)?;
+    let (model, dec) = load_dit(dit, vae)?;
+    let wanted = parse_classes(classes, names, model.cfg.classes)?;
+    let r = if reference == "diffusers" {
+        Reference::Diffusers
+    } else {
+        Reference::Original
+    };
+    let (c, s) = (model.cfg.in_channels, model.cfg.size);
+    let per = c * s * s;
+    // The same noises for every class, so a column shows one noise asked
+    // for each class.
+    let mut rng = Rng::new(seed);
+    let noise: Vec<f32> = (0..noises * per).map(|_| rng.normal() as f32).collect();
+    println!("{DIT_CREDIT}");
+    println!("{} classes × {noises} noises, guidance {guidance}, {steps} DDIM steps, {reference} arithmetic", wanted.len());
+    let mut images: Vec<Mat<f32>> = Vec::new();
+    for (k, (class, name)) in wanted.iter().enumerate() {
+        let t0 = Instant::now();
+        let lat = generate(
+            &model,
+            &noise,
+            &vec![*class; noises],
+            guidance,
+            steps,
+            r,
+            |_, _| {},
+        );
+        let gen_s = t0.elapsed().as_secs_f64();
+        let t1 = Instant::now();
+        images.push(decode_latents(&dec, &lat, c, s));
+        println!(
+            "  row {}: {class} {name}: generated in {gen_s:.1} s ({:.2} s a step), decoded in {:.1} s",
+            k + 1,
+            gen_s / steps as f64,
+            t1.elapsed().as_secs_f64()
+        );
+    }
+    let width = images[0].cols;
+    let all = Mat::from_vec(
+        images.len() * noises,
+        width,
+        images.into_iter().flat_map(|m| m.data).collect(),
+    );
+    let side = image_side(width);
+    let shape = mini_diffusion::image::Shape {
+        height: side,
+        width: side,
+        channels: 3,
+    };
+    write_grid(output, &all, shape, noises, 1)?;
+    println!("Wrote {}", output.display());
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dit_inside(
+    dit: &Path,
+    vae: &Path,
+    class: &str,
+    names: &Path,
+    noises: usize,
+    moments: usize,
+    guidance: f32,
+    steps: usize,
+    seed: u64,
+    output: &Path,
+) -> Result<(), String> {
+    use mini_diffusion::ditxl::{generate, Reference};
+    check_writable(output)?;
+    let (model, dec) = load_dit(dit, vae)?;
+    let wanted = parse_classes(class, names, model.cfg.classes)?;
+    let (cl, name) = wanted.first().ok_or("no class given")?.clone();
+    let (c, s) = (model.cfg.in_channels, model.cfg.size);
+    let per = c * s * s;
+    let mut rng = Rng::new(seed);
+    let noise: Vec<f32> = (0..noises * per).map(|_| rng.normal() as f32).collect();
+    // The moments: steps evenly spread from the first to the last.
+    let shown: Vec<usize> = (0..moments.max(1))
+        .map(|m| {
+            if moments <= 1 {
+                steps - 1
+            } else {
+                m * (steps - 1) / (moments - 1)
+            }
+        })
+        .collect();
+    println!("{DIT_CREDIT}");
+    println!("{cl} {name}: {noises} noises, guidance {guidance}, {steps} steps; the guess at steps {shown:?} (counting from 0)");
+    let mut guesses: Vec<Vec<f32>> = Vec::new();
+    let lat = generate(
+        &model,
+        &noise,
+        &vec![cl; noises],
+        guidance,
+        steps,
+        Reference::Original,
+        |k, x0| {
+            if shown.contains(&k) {
+                guesses.push(x0.to_vec());
+            }
+        },
+    );
+    // Rows are noises, columns moments then the finished photograph.
+    let cols = guesses.len() + 1;
+    let mut decoded: Vec<Mat<f32>> = guesses
+        .iter()
+        .map(|g| decode_latents(&dec, g, c, s))
+        .collect();
+    decoded.push(decode_latents(&dec, &lat, c, s));
+    let width = decoded[0].cols;
+    let mut data = Vec::new();
+    for e in 0..noises {
+        for d in &decoded {
+            data.extend_from_slice(d.row(e));
+        }
+    }
+    let side = image_side(width);
+    let shape = mini_diffusion::image::Shape {
+        height: side,
+        width: side,
+        channels: 3,
+    };
+    write_grid(
+        output,
+        &Mat::from_vec(noises * cols, width, data),
+        shape,
+        cols,
+        1,
+    )?;
+    println!("Wrote {}", output.display());
+    Ok(())
+}
+
+fn dit_check(dit: &Path, vae: &Path, dit_ref: &Path, vae_ref: &Path) -> Result<(), String> {
+    use mini_diffusion::conv::Feature;
+    use mini_diffusion::ditxl::{Reference, Weights};
+    let (model, dec) = load_dit(dit, vae)?;
+    for p in [dit_ref, vae_ref] {
+        if !p.exists() {
+            return Err(format!(
+                "{}: not found: make dit-reference writes it",
+                p.display()
+            ));
+        }
+    }
+    let worst = |got: &[f32], want: &[f32]| -> f32 {
+        let scale = want.iter().fold(0f32, |a, b| a.max(b.abs())).max(1e-30);
+        got.iter()
+            .zip(want)
+            .fold(0f32, |a, (g, w)| a.max((g - w).abs()))
+            / scale
+    };
+    let rf = safetensors::read(dit_ref)?;
+    let w = Weights::new(&rf);
+    let latent = &w.get("input.latent")?.data;
+    let times = w.get("input.times")?.data.clone();
+    let labels: Vec<usize> = w
+        .get("input.labels")?
+        .data
+        .iter()
+        .map(|&v| v as usize)
+        .collect();
+    let r = Reference::Diffusers;
+    println!("DiT-XL/2 against the reference, worst difference as a share of the largest value:");
+    let t0 = Instant::now();
+    let mut x = model.embed(latent, labels.len());
+    println!(
+        "  after the patch embedding  {:.1e}",
+        worst(&x.data, &w.get("inter.patches")?.data)
+    );
+    let mut checked = 0;
+    for b in 0..model.cfg.blocks {
+        model.block(b, &mut x, &times, &labels, r);
+        if let Some(t) = w.find(&format!("inter.block{b}")) {
+            println!(
+                "  after block {:<2}            {:.1e}",
+                b + 1,
+                worst(&x.data, &t.data)
+            );
+            checked += 1;
+        }
+    }
+    let out = model.finish(&x, &times, &labels, r);
+    let secs = t0.elapsed().as_secs_f64();
+    let want = &w.get("output")?.data;
+    let per = model.cfg.in_channels * model.cfg.size * model.cfg.size;
+    let each = out.len() / labels.len();
+    let eps_got: Vec<f32> = (0..labels.len())
+        .flat_map(|e| out[e * each..e * each + per].to_vec())
+        .collect();
+    let eps_want: Vec<f32> = (0..labels.len())
+        .flat_map(|e| want[e * each..e * each + per].to_vec())
+        .collect();
+    println!(
+        "  ε                          {:.1e}",
+        worst(&eps_got, &eps_want)
+    );
+    println!("  the whole output           {:.1e}", worst(&out, want));
+    println!(
+        "  one pass of {} examples: {secs:.2} s ({checked} blocks checked)",
+        labels.len()
+    );
+    let vf = safetensors::read(vae_ref)?;
+    let vw = Weights::new(&vf);
+    let z = vw.get("input.latent")?;
+    let side = image_side(z.data.len() * 3 / dec.cfg.latent);
+    let t1 = Instant::now();
+    let img = dec.decode(&Feature::new(dec.cfg.latent, side, side, z.data.clone()));
+    let secs = t1.elapsed().as_secs_f64();
+    println!(
+        "The decoder: {} × {} image, worst difference {:.1e} of the largest value; {secs:.2} s",
+        img.h,
+        img.w,
+        worst(&img.data, &vw.get("output")?.data)
+    );
     Ok(())
 }

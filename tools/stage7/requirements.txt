@@ -1,0 +1,7 @@
+# Stage 7's setup only (PLAN.md, Decision 9): downloading, converting,
+# and the reference outputs. Generating needs none of it.
+torch
+diffusers==0.31.0
+safetensors
+huggingface_hub
+accelerate

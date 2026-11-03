@@ -84,13 +84,15 @@ full; tool and product names are explained where they first appear.
   - [Running it](#running-it-4)
   - [Stage 6 results](#stage-6-results)
   - [What stage 6 taught](#what-stage-6-taught)
-- [Stage 7: a real model (planned)](#stage-7-a-real-model-planned)
+- [Stage 7: a real model](#stage-7-a-real-model)
   - [Where it fits](#where-it-fits-6)
   - [The models, and the terms of their use](#the-models-and-the-terms-of-their-use)
   - [How DiT-XL/2 differs from this project's DiT](#how-dit-xl2-differs-from-this-projects-dit)
   - [What it adds](#what-it-adds-3)
   - [How it will be tested](#how-it-will-be-tested-3)
   - [Predictions](#predictions-5)
+  - [What was built](#what-was-built-4)
+  - [Running it](#running-it-5)
 - [How far could this go?](#how-far-could-this-go)
   - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
@@ -452,7 +454,7 @@ the example changes at every sampling step.
    language model on TinyStories (tiny-llm-in-rust's corpus of short,
    simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size.
-7. **A real model** (planned, not started; its plan and predictions are written: see [Stage 7](#stage-7-a-real-model-planned)):
+7. **A real model** (built and tested on tiny models; not yet run on the real ones: see [Stage 7](#stage-7-a-real-model)):
    generating images with DiT-XL/2, the DiT paper's own trained model,
    through this project's code, as tiny-llm-in-rust ran SmolLM (an
    open-weight language model of 1.7 billion parameters). Its
@@ -3062,11 +3064,11 @@ dialogue) but not the subject.
    starting from all MASK already knows how stories begin, so the
    failures seen here are the same problems, much enlarged.
 
-## Stage 7: a real model (planned)
+## Stage 7: a real model
 
-**Not started.** This section records, before any code, the terms
-under which the models it uses may be used, the plan, and the
-predictions.
+**Built, not yet run on the real models.** This section records the
+terms under which the models it uses may be used, the plan and the
+predictions (all written before any code), then what was built.
 
 ### Where it fits
 
@@ -3177,7 +3179,8 @@ are needed.
   code), checks it, and writes it as safetensors in f32 to `models/`.
   The diffusers format stores the time and class embedding inside every
   one of the 28 blocks; the converter checks that the 28 copies are
-  identical and keeps one. Python with PyTorch is needed for this step
+  identical, and keeps them all, since each block uses its own copy in
+  diffusers' arithmetic and the Rust code follows it. Python with PyTorch is needed for this step
   and the reference outputs only (Decision 9); generating needs neither.
 - **The download**, `make dit-download`, which fetches the two models
   from their own sources and converts the DiT. It prints the licence
@@ -3194,8 +3197,9 @@ are needed.
   layer.
 - `dit-sample`: a grid of photographs, a row per class, a column per
   starting noise, with `--classes`, `--guidance` and `--steps`, by
-  class number or by name (the 1,000 ImageNet class names, kept in
-  `tools/stage7/imagenet_classes.txt`). The credit to the model's
+  class number or by name (the 1,000 ImageNet class names, which the
+  converter takes from the DiT repository's pipeline index into
+  `models/imagenet_classes.txt`, not kept in this repository). The credit to the model's
   authors and the licence is printed with every grid.
 - `dit-inside`: stage 5's preview grid at full scale: the model's guess
   of the finished photograph at each step, decoded.
@@ -3249,7 +3253,10 @@ Written before any code, each with its mechanism and its check:
    240 billion a second tiny-llm-in-rust measured. So 50 steps take 7
    to 12 minutes per grid, and the decoder adds 2 to 6 seconds per
    photograph (about 0.6 trillion operations each, mostly the 3 × 3
-   convolutions at 128 × 128 and 256 × 256).
+   convolutions at 128 × 128 and 256 × 256). (Corrected while building,
+   before any run: "per grid" should read "per row of 8 photographs";
+   the arithmetic is unchanged, but the grid of prediction 4 has 8 rows,
+   so it takes 1 to 1.6 hours.)
 4. **Photographs of the class asked for**: at guidance 4 and 50 DDIM
    steps, for the eight classes of the DiT paper's own sample grid
    (golden retriever, Arctic fox, otter, red panda, geyser, macaw,
@@ -3272,6 +3279,56 @@ Written before any code, each with its mechanism and its check:
    the subject is, the main colours) in at least 6 of 8 cases, as stage
    5 found the digit decided by t ≈ 0.2 to 0.3. Check: `dit-inside`'s
    preview grid, by eye.
+
+### What was built
+
+- `conv.rs`: convolution by im2col, group normalization, upsampling,
+  SiLU, each checked against a direct calculation.
+- `ditxl.rs`: DiT-XL/2's forward pass and `generate` (DDIM with
+  guidance, reporting the guess at each step), under diffusers' names,
+  with `Reference` choosing whose arithmetic to follow where diffusers
+  and the DiT repository differ.
+- `vae.rs`: the decoder.
+- The commands `dit-sample`, `dit-inside` and `dit-check`, and the
+  Python tools in `tools/stage7/`: `download.py` (shows the terms,
+  downloads only with `DIT_LICENSE=accept`), `convert.py`,
+  `reference.py` and `fixtures.py`.
+- Tests: both tiny models reproduce diffusers' outputs to within about
+  10⁻⁷ of the largest value, after the patch embedding, after each
+  block, at the output, and for the decoded image; DDIM with guidance
+  (guidance 1 needs no unconditional pass; at guidance 0 the class makes
+  no difference); the positions' closed form. The smoke test runs all
+  three commands on the tiny models. The whole setup (convert, reference,
+  check) was run on a tiny copy of the real folders' layout.
+
+Found while building, and not in the plan: **diffusers and the DiT
+repository don't compute quite the same model.** The time features'
+frequencies are 10000^(−i/127) in diffusers and 10000^(−i/128) in the
+original, so at t = 999 the middle frequencies' angles differ by about
+half a radian; and diffusers' second layer norm in each block uses
+ε = 10⁻⁵ where the original uses 10⁻⁶. The model was trained with the
+original arithmetic, so `dit-sample` follows it by default
+(`--reference original`); `dit-check` follows diffusers, to compare
+like with like. Also found: diffusers' `from_pretrained` falls back to
+loading a PyTorch pickle unsafely when no safetensors file is present,
+so the reference script builds the model from its configuration and
+loads the converted safetensors instead; the pickle is opened only by
+`convert.py`, with the safe loader.
+
+### Running it
+
+| Command | What it does |
+|---|---|
+| `make dit-download` | shows the models' licences and stops |
+| `make dit-download DIT_LICENSE=accept` | creates the Python environment under `models/`, downloads both models (3.3 GB and 335 MB) and converts them; prints the counts and the copies' check (prediction 1) |
+| `make dit-check` | the official code's outputs (`make dit-reference`, on the first run), then DiT-XL/2 and the decoder against them, number for number, with the time per pass (predictions 2 and 3) |
+| `make dit` | photographs of the eight sample classes, eight noises each, at guidance 4 and 50 steps, into `out/dit.png`: 1 to 1.6 hours by prediction 3 (prediction 4) |
+| `make dit-guidance` | the same grid at guidance 1 and 4 (prediction 5) |
+| `make dit-steps` | the same grid at 4, 10 and 25 steps (prediction 6) |
+| `make dit-inside` | the decoded guess during the generation of four golden retrievers (prediction 7) |
+
+`DIT_CLASSES`, `DIT_NOISES`, `DIT_GUIDANCE` and `DIT_STEPS` change the
+grids; classes can be given by number or by name.
 
 ## How far could this go?
 
@@ -3506,9 +3563,10 @@ here as they come up, and stay open until settled.
    them is the masked objective's alone. tiny-llm-in-rust's own model
    stays in the table, for reference. `make text` passes `--rope`.
 
-9. **Stage 7 uses Python, with PyTorch, for setup only.** Proposed.
-   Everything else in this project's tools uses Python's standard
-   library alone, and generation stays in Rust. But two steps can't be
+9. **Stage 7 uses Python, with PyTorch, for setup only.** Decided, as
+   tiny-llm-in-rust decided for SmolLM, whose download and reference
+   outputs also use PyTorch. Everything else in this project's tools
+   uses Python's standard library alone, and generation stays in Rust. But two steps can't be
    done otherwise without a much larger, riskier piece of work:
    - *the DiT weights are only a PyTorch pickle*: reading one in Rust
      would mean writing a pickle reader, and a pickle can carry code;
@@ -3533,14 +3591,17 @@ tiny-diffusion-in-rust/
 │   ├── src/       # tensor, tape, blas, rng, safetensors (the foundation);
 │   │              # data2d, flow, ddpm, mlp, optim, train2d, svg, metrics (stage 2);
 │   │              # image, dit, trainimg (stage 3); classify (stage 4);
-│   │              # main.rs, the commands
+│   │              # style, inside (stage 5); text, textmodel (stage 6);
+│   │              # conv, ditxl, vae (stage 7); main.rs, the commands
 │   └── tests/data # test fixtures
 ├── docs/          # figures for this file and the README
 ├── tools/         # toc.py: this file's table of contents and link check;
 │                  # acronyms.py: every acronym defined at first use;
-│                  # ci/smoke.sh: every command end to end, in seconds
+│                  # ci/smoke.sh: every command end to end, in seconds;
+│                  # stage7/: download, convert, reference outputs, fixtures (Python with PyTorch)
 ├── .github/       # workflows/main.yaml: formatting, lint and tests, on Linux and macOS
 ├── data/          # downloaded datasets (git-ignored)
+├── models/        # stage 7's downloaded models and Python environment (git-ignored)
 └── out/           # generated files: models, plots, images (git-ignored)
 ```
 

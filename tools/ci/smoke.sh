@@ -53,6 +53,13 @@ $D train-text --ids diffusion/tests/data/tiny.ids --width 16 --blocks 1 --heads 
 step "train-text --next-token (the control)"
 $D train-text --ids diffusion/tests/data/tiny.ids --width 16 --blocks 1 --heads 2 --context 32 \
     --ffn 32 --steps 20 --log-every 10 --next-token -o "$T/ctrl.safetensors"
+step "stage 7 on the tiny random models: dit-check, dit-sample, dit-inside"
+TINY="--dit diffusion/tests/data/dit-tiny.safetensors --vae diffusion/tests/data/vae-tiny.safetensors"
+$D dit-check $TINY --dit-reference diffusion/tests/data/dit-tiny.safetensors \
+    --vae-reference diffusion/tests/data/vae-tiny.safetensors > /dev/null
+$D dit-sample $TINY --classes 1,2 --noises 2 --steps 3 -o "$T/dit.png" > /dev/null
+$D dit-inside $TINY --class 3 --noises 2 --moments 2 --steps 3 -o "$T/dit-inside.png" > /dev/null
+python3 -c 'import sys; sys.exit(open(sys.argv[1], "rb").read(8) != b"\x89PNG\r\n\x1a\n")' "$T/dit.png"
 step "train-text --rope, and sample-text from it"
 $D train-text --ids diffusion/tests/data/tiny.ids --width 16 --blocks 1 --heads 2 --context 32 \
     --ffn 32 --steps 20 --log-every 10 --draws 2 --rope -o "$T/rope.safetensors"

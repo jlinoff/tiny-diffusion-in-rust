@@ -12,9 +12,11 @@
 
 pub mod blas;
 pub mod classify;
+pub mod conv;
 pub mod data2d;
 pub mod ddpm;
 pub mod dit;
+pub mod ditxl;
 pub mod flow;
 pub mod image;
 pub mod inside;
@@ -31,3 +33,4 @@ pub mod text;
 pub mod textmodel;
 pub mod train2d;
 pub mod trainimg;
+pub mod vae;

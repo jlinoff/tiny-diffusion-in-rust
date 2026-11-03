@@ -250,6 +250,69 @@ llm-stories: | $(OUT) ## Stage 6: 8 stories from tiny-llm-in-rust's trained mode
 	done > $(TEXT_AR_SAMPLES)
 	@echo "wrote $(TEXT_AR_SAMPLES)"
 
+# Stage 7 (PLAN.md): DiT-XL/2 and its autoencoder, downloaded from their
+# own sources under their own licences (DiT-XL/2: CC BY-NC 4.0,
+# non-commercial use only), into MODELS, never into git. make dit-download
+# shows the terms and downloads only with DIT_LICENSE=accept. Python with
+# PyTorch is used for the download, the conversion and the reference
+# outputs (Decision 9), in its own environment under MODELS; generating
+# is this project's Rust.
+MODELS       ?= models
+DIT_LICENSE  ?=
+DIT_CLASSES  ?= 207,279,360,387,974,88,979,417
+DIT_NOISES   ?= 8
+DIT_GUIDANCE ?= 4
+DIT_STEPS    ?= 50
+DIT_PY       := $(MODELS)/venv/bin/python3
+DIT_FILES    := --dit $(MODELS)/dit-xl-2-256.safetensors --vae $(MODELS)/sd-vae-ft-ema-decoder.safetensors \
+	--names $(MODELS)/imagenet_classes.txt
+
+$(DIT_PY):
+	$(call hdr,stage 7's Python environment)
+	python3 -m venv $(MODELS)/venv
+	$(MODELS)/venv/bin/pip install -r tools/stage7/requirements.txt
+
+.PHONY: dit-download dit-reference dit-check dit dit-guidance dit-steps dit-inside dit-fixtures
+dit-download: | $(DIT_PY) ## Stage 7: show the models' licences; with DIT_LICENSE=accept, download and convert them.
+	$(call hdr,dit-download)
+	DIT_LICENSE=$(DIT_LICENSE) $(DIT_PY) tools/stage7/download.py $(MODELS)
+	$(call hdr,convert)
+	$(DIT_PY) tools/stage7/convert.py $(MODELS)
+
+dit-reference: | $(DIT_PY) ## Stage 7: the official code's outputs for dit-check (needs dit-download).
+	$(call hdr,dit-reference)
+	$(DIT_PY) tools/stage7/reference.py $(MODELS)
+
+dit-check: | $(DIFFUSION) ## Stage 7: DiT-XL/2 and the decoder against the official code, number for number; time per pass.
+	@test -e $(MODELS)/reference-dit.safetensors || $(MAKE) -s dit-reference
+	$(call hdr,dit-check)
+	$(DIFFUSION) dit-check --dit $(MODELS)/dit-xl-2-256.safetensors --vae $(MODELS)/sd-vae-ft-ema-decoder.safetensors \
+		--dit-reference $(MODELS)/reference-dit.safetensors --vae-reference $(MODELS)/reference-vae.safetensors
+
+dit: | $(DIFFUSION) $(OUT) ## Stage 7: photographs of DIT_CLASSES, DIT_NOISES each, into out/dit.png: an hour or more.
+	$(call hdr,dit-sample)
+	$(DIFFUSION) dit-sample $(DIT_FILES) --classes '$(DIT_CLASSES)' --noises $(DIT_NOISES) \
+		--guidance $(DIT_GUIDANCE) --steps $(DIT_STEPS) -o $(OUT)/dit.png
+
+dit-guidance: | $(DIFFUSION) $(OUT) ## Stage 7: the same grid at guidance 1 and 4 (out/dit-w1.png, out/dit-w4.png).
+	for w in 1 4; do \
+		$(DIFFUSION) dit-sample $(DIT_FILES) --classes '$(DIT_CLASSES)' --noises $(DIT_NOISES) \
+			--guidance $$w --steps $(DIT_STEPS) -o $(OUT)/dit-w$$w.png || exit 1; \
+	done
+
+dit-steps: | $(DIFFUSION) $(OUT) ## Stage 7: the same grid at 4, 10 and 25 DDIM steps (out/dit-s4.png …).
+	for s in 4 10 25; do \
+		$(DIFFUSION) dit-sample $(DIT_FILES) --classes '$(DIT_CLASSES)' --noises $(DIT_NOISES) \
+			--guidance $(DIT_GUIDANCE) --steps $$s -o $(OUT)/dit-s$$s.png || exit 1; \
+	done
+
+dit-inside: | $(DIFFUSION) $(OUT) ## Stage 7: the model's guess of the finished photograph during generation (out/dit-inside.png).
+	$(call hdr,dit-inside)
+	$(DIFFUSION) dit-inside $(DIT_FILES) --class 207 --steps $(DIT_STEPS) --guidance $(DIT_GUIDANCE) -o $(OUT)/dit-inside.png
+
+dit-fixtures: ## Stage 7, for development: rebuild the tiny random test models (needs PyTorch and diffusers).
+	python3 tools/stage7/fixtures.py diffusion/tests/data
+
 .PHONY: classifier measure-stage3
 classifier: $(OUT)/classifier.safetensors ## Train the digit classifier, stage 4's measuring instrument: a minute or two.
 
@@ -291,7 +354,9 @@ lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links, acronyms de
 	cargo fmt $(CRATE) -- --check
 	cargo clippy --release -q $(CRATE) --all-targets $(CARGO_FEATURE_FLAGS) -- -D warnings
 	@if command -v pylint > /dev/null; then \
-		echo "pylint tools/*.py"; pylint --score=n tools/*.py; \
+		echo "pylint tools/*.py"; pylint --score=n tools/*.py && \
+		echo "pylint tools/stage7/*.py (PyTorch and diffusers needn't be installed)" && \
+		pylint --score=n --disable=import-error tools/stage7/*.py; \
 	else echo "pylint not installed: skipped (pip install pylint)"; fi
 	python3 tools/toc.py --check PLAN.md
 	python3 tools/acronyms.py PLAN.md README.md --known tools/acronyms-known.txt
@@ -318,7 +383,8 @@ clean: ## Remove generated files (keeps data/).
 # here and a HELP_ description.
 HELP_VARS := OUT CARGO_FEATURES TRAIN2D_ARGS IMG_ARGS SHAPES_ARGS PEEK_MODEL \
 	CLASSIFIER_ARGS GUIDE_MODEL GUIDANCE INSIDE_MODELS LLM_OUT TEXT_STEPS TEXT_ARGS \
-	TEXT_AR_SAMPLES URL_mnist URL_fashion
+	TEXT_AR_SAMPLES MODELS DIT_LICENSE DIT_CLASSES DIT_NOISES DIT_GUIDANCE DIT_STEPS \
+	URL_mnist URL_fashion
 HELP_OUT             := where models, plots and images are written
 HELP_CARGO_FEATURES  := blas: Apple Accelerate for large matrix products (default on macOS); empty: plain Rust
 HELP_TRAIN2D_ARGS    := options for train2d, the stage 2 models (diffusion train2d --help)
@@ -334,6 +400,12 @@ HELP_TEXT_STEPS      := training steps for make text (2000 for a quick model, ti
 HELP_TEXT_ARGS       := options for train-text, the masked diffusion language model (diffusion train-text --help)
 HELP_TEXT_AR_SAMPLES := tiny-llm-in-rust's stories (make llm-stories writes them), measured beside this model's by make text-sample
 HELP_URL_mnist       := where MNIST is downloaded from
+HELP_MODELS          := where stage 7's downloaded models, Python environment and reference outputs go (ignored by git)
+HELP_DIT_LICENSE     := set to accept to agree to the models' licences and let make dit-download download them
+HELP_DIT_CLASSES     := ImageNet classes for make dit and friends, by number or name (default: the DiT paper's sample classes)
+HELP_DIT_NOISES      := starting noises per class: the grid's columns
+HELP_DIT_GUIDANCE    := classifier-free guidance scale for make dit, dit-steps and dit-inside
+HELP_DIT_STEPS       := DDIM steps for make dit, dit-guidance and dit-inside
 HELP_URL_fashion     := where Fashion-MNIST is downloaded from
 
 # A value inside single quotes, with any single quote in it escaped.
