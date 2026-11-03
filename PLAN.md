@@ -94,6 +94,7 @@ full; tool and product names are explained where they first appear.
   - [What was built](#what-was-built-4)
   - [Running it](#running-it-5)
   - [Stage 7 results](#stage-7-results)
+  - [What stage 7 taught](#what-stage-7-taught)
 - [How far could this go?](#how-far-could-this-go)
   - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
@@ -463,7 +464,7 @@ the example changes at every sampling step.
    language model on TinyStories (tiny-llm-in-rust's corpus of short,
    simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size.
-7. **A real model** (built; matches the official code on the real models; sampling runs next: see [Stage 7](#stage-7-a-real-model)):
+7. **A real model** (done: see [Stage 7](#stage-7-a-real-model)):
    generating images with DiT-XL/2, the DiT paper's own trained model,
    through this project's code, as tiny-llm-in-rust ran SmolLM (an
    open-weight language model of 1.7 billion parameters). Its
@@ -3103,10 +3104,9 @@ dialogue) but not the subject.
 
 ## Stage 7: a real model
 
-**Built, and checked against the official code on the real models;
-the sampling runs are next.** This section records the terms under
-which the models it uses may be used, the plan and the predictions (all
-written before any code), then what was built and the results.
+**Done.** This section records the terms under which the models it
+uses may be used, the plan and the predictions (all written before any
+code), then what was built, the results, and what the stage taught.
 
 ### Where it fits
 
@@ -3557,6 +3557,48 @@ two predictions are withdrawn untested, and the lesson is stage 6's:
 measure before calling something a finding. (`--guide-channels`, built
 for the test, stays: it is tested, and reproduces the DiT repository's
 own sampler.)
+
+### What stage 7 taught
+
+1. **A small implementation can be the real thing.** The DiT written
+   for 1.8 million parameters, given the 675 million weights someone
+   else trained, computes what the official code computes to within
+   10⁻⁶, and draws their photographs. Nothing in the stages before had
+   been approximate; at full scale, the same code is the same model.
+2. **Test without the real weights.** Two tiny models built in the
+   official library with random weights, committed as fixtures of a few
+   hundred kilobytes, checked every layer and every name of the real
+   files' layout in continuous integration; the 3 GB models were needed
+   only for the last, confirming step, and it passed first time. The
+   same approach found what reading the code would have missed: the
+   official library and the original repository don't compute quite
+   the same model (the time features' divisor, one layer norm's ε), and
+   the library loads an unsafe file format when no safe one is present.
+3. **Guidance trades variety for clarity, at every scale.** 63 of 64
+   photographs were their class at guidance 4, 39 at guidance 1, the
+   unguided ones more varied and often half-formed: stage 4's digits,
+   in 1,000 classes of photographs.
+4. **The noise decides the picture before the model does.** The same
+   starting noise gives the same light and layout whatever class is
+   asked for (a dark column stays dark), and the same composition at 4
+   steps as at 50: the steps refine a picture whose arrangement the
+   noise and the first few steps have already fixed.
+5. **The generation can be watched, and it runs coarse to fine.** The
+   guess decoded at each step goes from amplified noise, to the class's
+   average photograph (stage 5's closed form, now visible), to the
+   layout by 30% of the way, the pose by 44%, and detail for the rest:
+   stages 2, 3 and 5's findings in one figure.
+6. **Measure before calling something a finding.** Flat patches of
+   colour seen in a reduced view of a grid led to two predictions about
+   their cause; at full resolution there were no patches. The habit
+   that made the other results trustworthy (a number, at full
+   resolution, before a conclusion) was the one skipped, and it was
+   caught only because the test was cheap to run.
+7. **A model's licence travels with its outputs.** Using someone else's
+   model means keeping its terms in view from the first line of the
+   plan: downloads that show the licence and need it accepted, weights
+   never in the repository, credit printed with every image, and the
+   figures it made marked as outside this project's own licence.
 
 ## How far could this go?
 

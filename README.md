@@ -11,9 +11,9 @@ It's the companion to
 same for a language model, and starts from that project's foundation: its
 matrices, automatic differentiation and model files.
 
-**Status: six stages done (images on request, a look inside, and a
-diffusion language model); stage 7, running a full-scale trained model
-through this code, is built and awaiting its first run.** Stage 2 did flow
+**Status: all seven stages done: images on request, a look inside, a
+diffusion language model, and a full-scale trained model run through
+this code.** Stage 2 did flow
 matching and DDPM (the original diffusion recipe) on 2D data, with plots
 of the samples, the paths from noise to data, and the learned velocity
 field. Stage 3 trains a 1.8-million-parameter diffusion transformer on
@@ -26,7 +26,10 @@ Stage 5 looks inside the trained models: what they are drawing at each
 moment, how straight their paths are, and where attention looks.
 Stage 6 turns to text: a masked diffusion language model, trained on
 the same stories as tiny-llm-in-rust's model and compared with it, from
-the plateau it first couldn't leave to the stories it writes.
+the plateau it first couldn't leave to the stories it writes. Stage 7
+loads DiT-XL/2, the DiT paper's own trained model, into this project's
+DiT, matches the official code to within a millionth, and generates its
+photographs.
 Every stage arrives with its tests, and `make test` and continuous
 integration have run from the first commit.
 
