@@ -2139,6 +2139,9 @@ fn dit_sample(
     println!("{DIT_CREDIT}");
     println!("{} classes × {noises} noises, guidance {guidance}, {steps} DDIM steps, {reference} arithmetic", wanted.len());
     let mut images: Vec<Mat<f32>> = Vec::new();
+    let rows = wanted.len();
+    let start = Instant::now();
+    let mut decode_secs = 0.0; // decoding time so far, for the estimate
     for (k, (class, name)) in wanted.iter().enumerate() {
         let t0 = Instant::now();
         let lat = generate(
@@ -2148,18 +2151,43 @@ fn dit_sample(
             guidance,
             steps,
             r,
-            |_, _| {},
+            |step, _| {
+                // Progress, updated in place: this row's step, the time a step
+                // takes, and an estimate of what's left (the remaining steps
+                // of every row, plus decoding at the rate seen so far).
+                let done = step + 1;
+                let per_step = t0.elapsed().as_secs_f64() / done as f64;
+                let steps_left = (steps - done) + (rows - k - 1) * steps;
+                let decode_left = if k > 0 {
+                    decode_secs / k as f64 * (rows - k) as f64
+                } else {
+                    0.0
+                };
+                print!(
+                "\r  row {} of {rows} ({name}): step {done} of {steps}, {per_step:.1} s a step, about {} remaining   ",
+                k + 1,
+                duration(per_step * steps_left as f64 + decode_left)
+            );
+                let _ = std::io::Write::flush(&mut std::io::stdout());
+            },
         );
         let gen_s = t0.elapsed().as_secs_f64();
         let t1 = Instant::now();
         images.push(decode_latents(&dec, &lat, c, s));
+        let dec_s = t1.elapsed().as_secs_f64();
+        decode_secs += dec_s;
         println!(
-            "  row {}: {class} {name}: generated in {gen_s:.1} s ({:.2} s a step), decoded in {:.1} s",
+            "\r  row {} of {rows}: {class} {name}: generated in {} ({:.2} s a step), decoded in {dec_s:.1} s{}",
             k + 1,
+            duration(gen_s),
             gen_s / steps as f64,
-            t1.elapsed().as_secs_f64()
+            " ".repeat(20)
         );
     }
+    println!(
+        "All {rows} rows in {}",
+        duration(start.elapsed().as_secs_f64())
+    );
     let width = images[0].cols;
     let all = Mat::from_vec(
         images.len() * noises,
@@ -2212,6 +2240,7 @@ fn dit_inside(
     println!("{DIT_CREDIT}");
     println!("{cl} {name}: {noises} noises, guidance {guidance}, {steps} steps; the guess at steps {shown:?} (counting from 0)");
     let mut guesses: Vec<Vec<f32>> = Vec::new();
+    let t0 = Instant::now();
     let lat = generate(
         &model,
         &noise,
@@ -2223,7 +2252,20 @@ fn dit_inside(
             if shown.contains(&k) {
                 guesses.push(x0.to_vec());
             }
+            let done = k + 1;
+            let per_step = t0.elapsed().as_secs_f64() / done as f64;
+            print!(
+                "\r  step {done} of {steps}, {per_step:.1} s a step, about {} remaining   ",
+                duration(per_step * (steps - done) as f64)
+            );
+            let _ = std::io::Write::flush(&mut std::io::stdout());
         },
+    );
+    println!(
+        "\r  generated in {}; decoding {} photographs{}",
+        duration(t0.elapsed().as_secs_f64()),
+        noises * (shown.len() + 1),
+        " ".repeat(20)
     );
     // Rows are noises, columns moments then the finished photograph.
     let cols = guesses.len() + 1;
