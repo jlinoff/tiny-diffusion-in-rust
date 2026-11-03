@@ -373,8 +373,8 @@ lint: ## Formatting, clippy, pylint (if installed), PLAN.md's links, acronyms de
 	test -z "$$missing" || { echo "make help doesn't list: $$missing (add to HELP_VARS)"; exit 1; }; \
 	echo "make help lists every variable"
 	@$(MAKE) -s help > /dev/null && echo "make help runs"
-	@for f in $$(grep -ohE 'docs/[A-Za-z0-9._-]+' PLAN.md README.md | sort -u); do \
-		test -f $$f || { echo "PLAN.md or README.md shows $$f, which doesn't exist"; exit 1; }; \
+	@for f in $$(grep -ohE 'docs/[A-Za-z0-9._/-]+' PLAN.md README.md | sort -u); do \
+		test -e $$f || { echo "PLAN.md or README.md shows $$f, which doesn't exist"; exit 1; }; \
 	done; echo "every figure the documents show exists"
 
 .PHONY: toc
