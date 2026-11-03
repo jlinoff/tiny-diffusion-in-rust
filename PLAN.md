@@ -93,6 +93,7 @@ full; tool and product names are explained where they first appear.
   - [Predictions](#predictions-5)
   - [What was built](#what-was-built-4)
   - [Running it](#running-it-5)
+  - [Stage 7 results](#stage-7-results)
 - [How far could this go?](#how-far-could-this-go)
   - [How representative is this?](#how-representative-is-this)
   - [Open models](#open-models)
@@ -454,7 +455,7 @@ the example changes at every sampling step.
    language model on TinyStories (tiny-llm-in-rust's corpus of short,
    simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
    tiny-llm-in-rust's model at the same size.
-7. **A real model** (built and tested on tiny models; not yet run on the real ones: see [Stage 7](#stage-7-a-real-model)):
+7. **A real model** (built; matches the official code on the real models; sampling runs next: see [Stage 7](#stage-7-a-real-model)):
    generating images with DiT-XL/2, the DiT paper's own trained model,
    through this project's code, as tiny-llm-in-rust ran SmolLM (an
    open-weight language model of 1.7 billion parameters). Its
@@ -3066,9 +3067,10 @@ dialogue) but not the subject.
 
 ## Stage 7: a real model
 
-**Built, not yet run on the real models.** This section records the
-terms under which the models it uses may be used, the plan and the
-predictions (all written before any code), then what was built.
+**Built, and checked against the official code on the real models;
+the sampling runs are next.** This section records the terms under
+which the models it uses may be used, the plan and the predictions (all
+written before any code), then what was built and the results.
 
 ### Where it fits
 
@@ -3329,6 +3331,38 @@ loads the converted safetensors instead; the pickle is opened only by
 
 `DIT_CLASSES`, `DIT_NOISES`, `DIT_GUIDANCE` and `DIT_STEPS` change the
 grids; classes can be given by number or by name.
+
+### Stage 7 results
+
+**Prediction 1 (the real files): right.** The converter counted
+749,826,464 values in 538 tensors (about 750 million predicted). Each
+block's copy of the time and class embedding is 2,777,472 values (about
+2.8 million predicted), and without the 27 extra copies the model is
+674,834,720 values, the paper's 675 million. The 28 copies are
+identical.
+
+**Prediction 2 (agreement with the official code): right, by a hundred
+times.** With diffusers' arithmetic, against diffusers' own outputs on
+the same inputs, the worst difference as a share of the largest value:
+
+| After | Worst difference |
+|---|---|
+| the patch embedding | 7.9 × 10⁻⁸ |
+| block 1 | 2.8 × 10⁻⁶ |
+| block 28 | 2.7 × 10⁻⁶ |
+| ε | 1.0 × 10⁻⁶ |
+| the decoded image (256 × 256) | 2.4 × 10⁻⁵ |
+
+(10⁻⁴ predicted for ε, 10⁻³ for the image.) This project's DiT, built
+for 1.8 million parameters, computes what the official code computes
+with 675 million trained weights: the proof of concept stage 7 was for.
+
+**Prediction 3 (speed): right so far, at the fast end.** One pass of
+two examples took 1.02 s on the M4, about 233 billion operations a
+second (130 to 240 predicted), which projects to about 8 s for the
+guided pass of a row of 8 photographs (8 to 15 s predicted). The
+decoder took 2.4 s for one photograph (2 to 6 s predicted). The
+sampling runs will time it in use.
 
 ## How far could this go?
 
