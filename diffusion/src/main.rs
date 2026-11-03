@@ -2237,15 +2237,15 @@ fn dit_sample(
                 } else {
                     0.0
                 };
-                print!(
-                "\r  row {} of {rows} ({name}): step {done} of {steps} ({} of {} in all, {:.0}%), {per_step:.1} s a step, about {} remaining   ",
-                k + 1,
-                k * steps + done,
-                rows * steps,
-                100.0 * (k * steps + done) as f64 / (rows * steps) as f64,
-                duration(per_step * steps_left as f64 + decode_left)
-            );
-                let _ = std::io::Write::flush(&mut std::io::stdout());
+                let line = format!(
+                    "  row {} of {rows} ({name}): step {done} of {steps} ({} of {} in all, {:.0}%), {per_step:.1} s a step, about {} remaining",
+                    k + 1,
+                    k * steps + done,
+                    rows * steps,
+                    100.0 * (k * steps + done) as f64 / (rows * steps) as f64,
+                    duration(per_step * steps_left as f64 + decode_left)
+                );
+                show_progress(&line, done, steps);
             },
         );
         let gen_s = t0.elapsed().as_secs_f64();
@@ -2261,7 +2261,8 @@ fn dit_sample(
         std::fs::write(output.with_extension("txt"), legend)
             .map_err(|e| format!("can't write the legend: {e}"))?;
         println!(
-            "\r\x1b[2K  row {} of {rows}: {class} {name}: generated in {} ({:.2} s a step), decoded in {dec_s:.1} s",
+            "{}  row {} of {rows}: {class} {name}: generated in {} ({:.2} s a step), decoded in {dec_s:.1} s",
+            line_start(),
             k + 1,
             duration(gen_s),
             gen_s / steps as f64,
@@ -2277,6 +2278,35 @@ fn dit_sample(
         output.with_extension("txt").display()
     );
     Ok(())
+}
+
+/// Whether progress goes to a terminal, where one line can be rewritten
+/// in place, or to a file or pipe, where it can't.
+fn to_terminal() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal()
+}
+
+/// A progress line: on a terminal, rewritten in place at every step; into
+/// a file or a pipe (a log, or tee), an ordinary line every 10 steps, so
+/// the log reads cleanly and still shows the run moving.
+fn show_progress(line: &str, done: usize, steps: usize) {
+    if to_terminal() {
+        print!("\r\x1b[2K{line}");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+    } else if done.is_multiple_of(10) && done < steps {
+        println!("{line}");
+    }
+}
+
+/// What a line after progress starts with: on a terminal, a return and
+/// "erase the line", so it replaces the progress line; otherwise nothing.
+fn line_start() -> &'static str {
+    if to_terminal() {
+        "\r\x1b[2K"
+    } else {
+        ""
+    }
 }
 
 /// Rows of photographs (each a matrix of `noises` images) as one grid.
@@ -2345,15 +2375,16 @@ fn dit_inside(
             }
             let done = k + 1;
             let per_step = t0.elapsed().as_secs_f64() / done as f64;
-            print!(
-                "\r  step {done} of {steps}, {per_step:.1} s a step, about {} remaining   ",
+            let line = format!(
+                "  step {done} of {steps}, {per_step:.1} s a step, about {} remaining",
                 duration(per_step * (steps - done) as f64)
             );
-            let _ = std::io::Write::flush(&mut std::io::stdout());
+            show_progress(&line, done, steps);
         },
     );
     println!(
-        "\r\x1b[2K  generated in {}; decoding {} photographs",
+        "{}  generated in {}; decoding {} photographs",
+        line_start(),
         duration(t0.elapsed().as_secs_f64()),
         noises * (shown.len() + 1),
     );
