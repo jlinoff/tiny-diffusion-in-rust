@@ -19,3 +19,4 @@ AI
 FLUX
 OpenAI
 PyTorch
+DALL

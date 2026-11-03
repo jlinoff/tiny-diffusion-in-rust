@@ -99,6 +99,7 @@ full; tool and product names are explained where they first appear.
   - [Open models](#open-models)
   - [Why latent models need their autoencoder](#why-latent-models-need-their-autoencoder)
   - [What supporting latent diffusion would take](#what-supporting-latent-diffusion-would-take)
+  - [The other direction: language models that draw](#the-other-direction-language-models-that-draw)
 - [Decisions](#decisions)
 - [Where things live](#where-things-live)
 - [Bibliography](#bibliography)
@@ -338,6 +339,13 @@ image, never a cross product.
   before them ("the the"). **distinct-2**: the fraction of different
   two-word pairs among all of them, a measure of variety; 0.59 for real
   stories ([Stage 6, What it adds](#what-it-adds-2)).
+- **image tokenizer**, **codebook**: an autoencoder whose latent values
+  are each replaced by the nearest entry of a learned table (the
+  codebook), so an image becomes a short sequence of table indices a
+  language model can predict ([The other direction](#the-other-direction-language-models-that-draw)).
+- **FID** (Fréchet Inception Distance): the standard measure of how far
+  a set of generated images is from real ones; lower is better ([The
+  other direction](#the-other-direction-language-models-that-draw)).
 - **block diffusion**: blocks of text generated left to right, with
   diffusion inside each block, so finished blocks can be streamed and
   cached ([Inference
@@ -3579,6 +3587,80 @@ project's guidance. For text, the counterpart is MDLM, which needs the
 GPT-2 tokenizer and its own model's sizes; its rotary positions
 (RoPE), the other piece it needed, stage 6 has now built.
 
+### The other direction: language models that draw
+
+Stage 6 asked whether diffusion, the image method, could write text.
+The reverse works too: a language model can draw, predicting an image
+one token at a time exactly as tiny-llm-in-rust predicts a story. The
+catch is stage 6's in mirror image. A language model predicts the next
+item from a fixed vocabulary, so an image has to be made of tokens
+first, as text had to be given a MASK token before diffusion could
+noise it. Two ways have been used:
+
+- **Pixels as tokens.** Each pixel's value (0 to 255) is a token, and
+  the pixels are predicted one at a time in reading order: PixelCNN
+  (van den Oord et al. 2016) and OpenAI's Image GPT (Chen et al.
+  2020). It works, but a 256 × 256 colour image is about 200,000
+  tokens.
+- **Learned image tokens.** An **image tokenizer**, an autoencoder like
+  stage 7's but with each latent value replaced by the nearest entry of
+  a learned **codebook** (a fixed table of, say, 16,384 vectors), turns
+  an image into a short grid of codebook indices, which are the
+  "words"; a transformer predicts them, and the tokenizer's decoder
+  turns them back into pixels. The first DALL·E (Ramesh et al. 2021)
+  worked this way. LlamaGen (Sun et al. 2024) showed that Llama's
+  architecture, unchanged, does it well: an image of 256 × 256 pixels
+  becomes 16 × 16 = 256 tokens, and its largest model, 3.1 billion
+  parameters, reaches a lower (better) FID (Fréchet Inception
+  Distance, the standard measure of how far generated images are from
+  real ones) on ImageNet than DiT-XL/2 does.
+
+So latent diffusion needs an autoencoder to make images small, and an
+autoregressive image model needs one to make them discrete: the same
+part, for different reasons.
+
+The trade-offs mirror stage 6's:
+
+- **Order.** Text has a natural order; images don't. Reading an image
+  row by row is arbitrary: the model must commit to the top-left corner
+  before it knows what the picture is of, the mirror of stage 6's masked
+  model, which had no order to lean on. Two answers: MaskGIT (Chang et
+  al. 2022) unmasks image tokens in any order, stage 6's masked approach
+  applied to images; and VAR (Tian et al. 2024) predicts a whole coarse
+  image (1 × 1 tokens), then finer and finer ones, each scale all at
+  once ("next-scale prediction"), as stage 5 found diffusion settling
+  the large structure first. VAR reports an FID of 1.73 on ImageNet at
+  256 × 256 with 2 billion parameters, against DiT-XL/2's 2.27, and
+  generation in a forty-fifth of DiT-XL/2's time.
+- **Speed.** Plain next-token prediction makes one token per pass, and
+  hundreds of tokens per image: the KV-cache trade of [Inference
+  compared](#inference-compared-and-why-a-pretrained-model-cant-simply-switch),
+  from the other side.
+- **What it buys.** One model, one kind of prediction, for text and
+  images together, so a model that reads and writes images can be a
+  language model throughout: Meta's Chameleon (2024) mixes text and
+  image tokens in one sequence; Transfusion (Zhou et al. 2024) writes
+  text token by token and images by diffusion inside one transformer;
+  and NextStep-1 (StepFun, 2026), a 14-billion-parameter language model
+  that predicts image patches in sequence with a small flow-matching
+  head drawing each one, approaches diffusion models' scores but not
+  yet the best, and is slow (about 8 seconds for an image's 1,024
+  tokens).
+
+Where things stood in November 2026, as a dated note: diffusion
+transformers still lead open-weight image generation (FLUX, Stable
+Diffusion 3.5); OpenAI's image generation, since March 2025, is
+"native" to GPT-4o, which OpenAI hasn't described further (outside
+commentators read it as autoregressive, perhaps with a diffusion stage
+at the end); and research models narrow the gap from both sides.
+
+What it would take here: the decoder of stage 7 plus a codebook, a
+tokenizer's encoder, and tiny-llm-in-rust's transformer trained on the
+tokens of MNIST's digits instead of TinyStories' words. A digit of 28 ×
+28 pixels, cut into 4 × 4 patches, would be 49 tokens, a sentence. It
+isn't planned; it would be the two projects' meeting point from the
+other side.
+
 ## Decisions
 
 Settled before stage 2, each with its reason; new questions get added
@@ -3796,6 +3878,29 @@ first.
 - Zhou, C., et al. (2024). "Transfusion: Predict the Next Token and
   Diffuse Images with One Multi-Modal Model."
   [arXiv:2408.11039](https://arxiv.org/abs/2408.11039).
+- van den Oord, A., Kalchbrenner, N., Vinyals, O., Espeholt, L., Graves,
+  A., & Kavukcuoglu, K. (2016). "Conditional Image Generation with
+  PixelCNN Decoders." NeurIPS. Pixels predicted one at a time.
+- Chen, M., et al. (2020). "Generative Pretraining from Pixels." ICML.
+  Image GPT.
+- Ramesh, A., et al. (2021). "Zero-Shot Text-to-Image Generation."
+  ICML. The first DALL·E: image tokens predicted by a transformer.
+- Chang, H., Zhang, H., Jiang, L., Liu, C., & Freeman, W. T. (2022).
+  "MaskGIT: Masked Generative Image Transformer." CVPR (Conference on
+  Computer Vision and Pattern Recognition).
+- Sun, P., et al. (2024). "Autoregressive Model Beats Diffusion: Llama
+  for Scalable Image Generation."
+  [arXiv:2406.06525](https://arxiv.org/abs/2406.06525). LlamaGen.
+- Tian, K., Jiang, Y., Yuan, Z., Peng, B., & Wang, L. (2024). "Visual
+  Autoregressive Modeling: Scalable Image Generation via Next-Scale
+  Prediction." NeurIPS.
+  [arXiv:2404.02905](https://arxiv.org/abs/2404.02905). VAR.
+- Chameleon Team (2024). "Chameleon: Mixed-Modal Early-Fusion
+  Foundation Models." [arXiv:2405.09818](https://arxiv.org/abs/2405.09818).
+- StepFun (2026). "NextStep-1: Toward Autoregressive Image Generation
+  with Continuous Tokens at Scale." ICLR 2026.
+- OpenAI (2025). "Introducing 4o Image Generation," March 25, 2025.
+  [openai.com](https://openai.com/index/introducing-4o-image-generation/).
 - BenchLM (2026). "Diffusion vs Autoregressive LLMs," August 3, 2026.
   [benchlm.ai](https://www.benchlm.ai/blog/posts/diffusion-vs-autoregressive-llm).
   Measured speeds and quality scores of hosted models.
