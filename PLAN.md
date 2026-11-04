@@ -575,8 +575,12 @@ mechanism (why: [What stage 3 taught](#what-stage-3-taught), 7).
 ## How to read the figures
 
 Every stage produces figures, and they're built to be read the same way.
-This section is for a reader new to diffusion; it uses stage 2's figures
-(`make stage2`, then open `out/*.svg` in a browser) as the examples.
+This section is for a reader new to diffusion. It starts with stage 2's
+figures (`make stage2`, then open `out/*.svg` in a browser), then takes
+each later kind of figure in the order the stages introduce it: image
+grids (stage 3), labelled digit grids (4), preview grids and attention
+maps (5), loss curves and text figures (6), photograph grids and the
+guess during generation (7).
 
 **The picture to keep in mind: a wind map.** The trained network is a
 wind map that changes with time: at every point and every moment t, which
@@ -635,6 +639,70 @@ roughly where a point is going, late steps settle exactly where.
   how the same noise is turned into an image, and the difference between
   the grids is the training alone.
 
+**Labelled digit grids** (stage 4: `make guidance`, e.g.
+`docs/digits-w1.png` and `docs/digits-w5.png`):
+
+- **each row asks for one digit**, 0 at the top to 9 at the bottom: the
+  label the model is given.
+- **each column is one starting noise**, the same in every row: down a
+  column, the same noise is asked for each digit in turn.
+- **what to look at**: across a row, how varied one digit's samples
+  are; down a column, what the noise decides whatever digit is asked
+  for (the slant and thickness of the writing, stage 4 found); and
+  between two grids made at different guidance scales w, what guidance
+  changes: at higher w, bolder and more alike digits.
+
+**Preview grids** (stage 5: `make inside`, e.g.
+`docs/inside-digits-preview.png`):
+
+- **each generation takes two rows**: on the upper, the model's guess of
+  the finished image at that moment; on the lower, the velocity, as an
+  image: grey where a pixel isn't changing, white where it is
+  brightening, black where it is darkening.
+- **each column is one moment**, t = 0, 1/8, … 1, from pure noise on
+  the left to the finished image on the right.
+- **what to look at**: the first column, where every guess is close to
+  the average image (the average digit asked for, with labels); the
+  column where the guess first shows its final digit (when the model
+  has decided); and the velocity rows, which stop changing once the path
+  becomes a straight line.
+
+**Attention maps** (stage 5: `make inside`, e.g.
+`docs/inside-digits-attention.png`):
+
+- **each small square is the image's grid of patches**, shaded by how
+  much the centre patch attends to each one (white most, black least,
+  averaged over the heads), for one generation.
+- **each row is one block** of the network, 1 at the top; **each column
+  one moment**, t = 0.1, 0.3, 0.5, 0.7 and 0.9.
+- **what to look at**: down a column, how differently the blocks look
+  (a fixed patch of neighbours, the strokes, the background); along a
+  row, how little one block's way of looking changes with t.
+
+**Loss curves** (stage 6: e.g. `docs/stage6/loss-2000.svg`):
+
+- **across: training steps; up: the loss**, in nats per token (defined
+  in stage 6, What it adds): lower is better.
+- **solid lines are the masked diffusion model, dashed the next-token
+  control**; blue means learned positions, orange RoPE.
+- **the thin dotted lines are reference levels**: knowing only how
+  common each token is (the plateau), and tiny-llm-in-rust's model.
+- **what to look at**: whether a curve leaves the plateau, and when.
+  These are training losses; the held-out figures are in the tables.
+
+**Text figures** (stage 6: `docs/stage6/masking.svg`,
+`docs/stage6/settling-confidence.svg` and `settling-random.svg`):
+
+- **the masking figure**: one sentence, a row per t from 1 (the text) to
+  0 (all MASK): text's noise, as a token-by-token picture.
+- **the infill figures**: the gap in a story at six moments of its
+  generation, one block of lines per moment. Black is the story around
+  the gap, ▒ a position still masked, blue a token already settled,
+  orange a token settled since the moment above.
+- **what to look at**: where the orange appears first, and where last:
+  at the gap's edges and then inward (confidence order), or anywhere
+  (random order).
+
 **Photograph grids** (stage 7: `dit-sample`'s PNG files, e.g.
 `out/dit.png`, with a legend beside each, e.g. `out/dit.txt`):
 
@@ -656,6 +724,18 @@ roughly where a point is going, late steps settle exactly where.
 - **the default classes** are the eight of the DiT paper's own sample
   grid, so the two can be compared: golden retriever, Arctic fox,
   otter, red panda, geyser, macaw, valley and balloon.
+
+**The guess during generation** (stage 7: `make dit-inside`,
+`docs/stage7/dit-inside.jpg`): stage 5's preview grid at full scale,
+without the velocity rows.
+
+- **each row is one photograph being made**, from one starting noise;
+  **each column one moment**: the model's guess of the finished
+  photograph at steps 0, 7, 14 … 49 of 50, then the finished photograph.
+- **what to look at**: the first column, which is amplified noise rather
+  than a guess (stage 7 explains why); the second, nearly the same
+  average photograph in every row; and the column where each row's
+  layout, then its pose, first appears.
 
 **The habit that makes them useful: ask what changed between two panels,
 and what didn't.** The figures change one thing at a time (the steps, the
@@ -1782,7 +1862,7 @@ GUIDE_MODEL=out/digits-cond-p4.safetensors`; copied to `docs/` from
 `out/digits-cond-p4-w1.png` and `-w5.png`). Each row asks for one digit,
 0 at the top to 9 at the bottom; each column starts from the same noise
 (reading them: [How to read the figures](#how-to-read-the-figures),
-Image grids):
+Labelled digit grids):
 
 | Guidance w = 1 | Guidance w = 5 |
 |---|---|
@@ -2015,7 +2095,9 @@ distance between each digit's mean image and the overall mean: 6.42):
 | Share of the t = 0 value | 101% | 113% | 115% | 96% | 69% | 45% | 29% | 20% | 14% | 11% | 18% |
 | Guesses apart | 6.47 | 6.51 | 5.88 | 4.31 | 2.65 | 1.43 | 0.75 | 0.39 | 0.18 | 0.07 | 0.02 |
 
-The preview grids: for each of eight generations, the model's guess of
+The preview grids (reading them: [How to read the
+figures](#how-to-read-the-figures), Preview grids): for each of eight
+generations, the model's guess of
 the finished image (upper row) and the velocity (lower row, grey 0,
 white brightening, black darkening), at t = 0, 1/8, …, 1. Left, without
 labels, all eight from the same noises as stage 3's grids; right, with
@@ -2078,7 +2160,9 @@ asked for, caught in the act.
   in depth, with the work divided between blocks, each with its own
   reach, at every moment.
 
-Where the centre patch looks, for the first generation of each model
+Where the centre patch looks (reading them: [How to read the
+figures](#how-to-read-the-figures), Attention maps), for the first
+generation of each model
 (averaged over the four heads; white is where it looks most, black
 least; one row per block, 1 at the top, and one column per moment,
 t = 0.1, 0.3, 0.5, 0.7 and 0.9). Left, without labels, a generation that
@@ -2810,7 +2894,8 @@ lessons after "which token follows this one" use the last few tokens
 pattern for every position, as for the masked model.
 
 The four 2,000-step runs together, from their training logs
-(`docs/stage6/loss-2000.csv`):
+(`docs/stage6/loss-2000.csv`; reading them: [How to read the
+figures](#how-to-read-the-figures), Loss curves):
 
 ![Training loss over 2,000 steps for the masked model and the next-token control, each with learned positions and with RoPE](docs/stage6/loss-2000.svg)
 
@@ -3077,7 +3162,8 @@ sides of a gap is what a masked model is trained for; at this size
 and this loss, it takes the setting from them (a mother, a child,
 dialogue) but not the subject.
 
-How the gap fills, step by step (`sample-text` records the step at which
+How the gap fills, step by step (reading them: [How to read the
+figures](#how-to-read-the-figures), Text figures; `sample-text` records the step at which
 each position settled, kept in `docs/stage6/infill-trace-confidence.tsv`
 and `docs/stage6/infill-trace-random.tsv`; tokens never
 change once settled, so that is the whole generation):
@@ -3468,7 +3554,9 @@ non-commercial use only, with credit to Peebles and Xie (2023), as
 ![8 classes by 8 noises at guidance 4 and 50 steps: golden retrievers, Arctic foxes, otters, red pandas, geysers, macaws, valleys, balloons](docs/stage7/dit.jpg)
 
 *DiT-XL/2 through this project's code, guidance 4, 50 DDIM steps: a row
-per class, a column per starting noise (CC BY-NC 4.0; see the notice).*
+per class, a column per starting noise (reading it: [How to read the
+figures](#how-to-read-the-figures), Photograph grids; CC BY-NC 4.0, see
+the notice).*
 
 **Prediction 4 (photographs of the class asked for): right.** Counted by
 eye by one person (Claude), recorded before the count was compared with
@@ -3554,7 +3642,9 @@ and later steps only refine it.
 **Prediction 7 (the guess settles early): right.** `make dit-inside`
 decodes the model's guess of the finished photograph at steps 0, 7, 14,
 21, 28, 35, 42 and 49 of 50, then shows the finished photograph, for the
-eight golden retrievers of the grid's first row:
+eight golden retrievers of the grid's first row (reading it: [How to
+read the figures](#how-to-read-the-figures), The guess during
+generation):
 
 ![Eight golden retrievers being generated, the guess decoded at eight moments, then the finished photograph](docs/stage7/dit-inside.jpg)
 
