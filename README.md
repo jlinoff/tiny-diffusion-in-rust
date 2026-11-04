@@ -74,7 +74,9 @@ wrong.
 
 - Rust 1.87 or later (`cargo`) and GNU make. On macOS, Apple's `make` is
   too old: `brew install make` and use `gmake`.
-- Python 3.8 or later, for the tools (standard library only).
+- Python 3.8 or later, for the tools (standard library only). Stage 7's
+  setup (`make dit-download`) also installs PyTorch and diffusers, into
+  its own environment under `models/`.
 - On macOS, Apple's Accelerate library is used for large matrix products
   automatically.
 

@@ -59,7 +59,7 @@ full; tool and product names are explained where they first appear.
   - [What it adds](#what-it-adds)
   - [How it will be tested](#how-it-will-be-tested)
   - [Predictions](#predictions-2)
-  - [What was built so far](#what-was-built-so-far)
+  - [What was built](#what-was-built-2)
   - [Running it](#running-it-2)
   - [Stage 4 results](#stage-4-results)
   - [What stage 4 taught](#what-stage-4-taught)
@@ -68,7 +68,7 @@ full; tool and product names are explained where they first appear.
   - [What it adds](#what-it-adds-1)
   - [How it will be tested](#how-it-will-be-tested-1)
   - [Predictions](#predictions-3)
-  - [What was built](#what-was-built-2)
+  - [What was built](#what-was-built-3)
   - [Running it](#running-it-3)
   - [Stage 5 results](#stage-5-results)
   - [What stage 5 taught](#what-stage-5-taught)
@@ -80,7 +80,7 @@ full; tool and product names are explained where they first appear.
   - [What it adds](#what-it-adds-2)
   - [How it will be tested](#how-it-will-be-tested-2)
   - [Predictions](#predictions-4)
-  - [What was built](#what-was-built-3)
+  - [What was built](#what-was-built-4)
   - [Running it](#running-it-4)
   - [Stage 6 results](#stage-6-results)
   - [What stage 6 taught](#what-stage-6-taught)
@@ -91,7 +91,7 @@ full; tool and product names are explained where they first appear.
   - [What it adds](#what-it-adds-3)
   - [How it will be tested](#how-it-will-be-tested-3)
   - [Predictions](#predictions-5)
-  - [What was built](#what-was-built-4)
+  - [What was built](#what-was-built-5)
   - [Running it](#running-it-5)
   - [Stage 7 results](#stage-7-results)
   - [What stage 7 taught](#what-stage-7-taught)
@@ -1186,7 +1186,7 @@ the path only cleans it up (prediction 3).
 
 ![Eight generations from noise to digit, at t = 0, 1/8, ..., 1](docs/digits-progress.png)
 
-Against the predictions so far:
+Against the predictions:
 
 - **2, digits appear early: right on timing, half right on the end
   state.** Digits were recognizable by step 2,000 and most were by
@@ -1529,7 +1529,7 @@ Written before any code. Each gives its mechanism and a numeric check.
    with agreement and confidence within 3 points of 7 × 7's. Mechanism:
    stage 3 found the two patch sizes give the same images on digits.
 
-### What was built so far
+### What was built
 
 Stage 4 is built in two steps: the instrument first, because every later
 measurement depends on it, then the conditioning.
@@ -2802,6 +2802,18 @@ lessons after "which token follows this one" use the last few tokens
 ("the" two back makes a noun likely), and with RoPE "two back" is one
 pattern for every position, as for the masked model.
 
+The four 2,000-step runs together, from their training logs
+(`docs/stage6/loss-2000.csv`):
+
+![Training loss over 2,000 steps for the masked model and the next-token control, each with learned positions and with RoPE](docs/stage6/loss-2000.svg)
+
+*Training losses (the masked model's on its masked tokens), not the
+held-out figures: the masked model with learned positions (solid blue)
+stays on the line of knowing only how common each token is; the
+next-token control (dashed) leaves it at once with either kind of
+position; with RoPE (solid orange), the masked model breaks away at
+about step 700. tiny-llm-in-rust's validation loss is drawn for scale.*
+
 **The masked objective's cost, measured cleanly.** Same network (RoPE),
 same data, same 2,000 steps of 2,048 tokens:
 
@@ -2981,6 +2993,13 @@ run:
 | Next-token control, RoPE | 2.65 | 14 | about 2.09 |
 | tiny-llm-in-rust's model (2,000 steps), for reference | 3.23 | 25 | |
 
+![Training loss over 20,000 steps, masked against next-token, both with RoPE](docs/stage6/loss-20000.svg)
+
+*The two 20,000-step runs (`docs/stage6/loss-20000.csv`): the masked
+model's loss is noisier, since each batch draws its own amount of
+masking, and is still falling at the end; the control's has nearly
+levelled.*
+
 **Prediction 12 (the bound ends under 4.0): right.** 3.49, from 4.91
 at 2,000 steps; ten times the training bought 1.4 nats, where the
 position-table model's bought 0.12. The masked model now beats
@@ -3152,7 +3171,7 @@ What this means for a user of this project:
   model's outputs, so the safe reading is to keep them under the same
   terms as the model.
 - **Credit**: anything that shows DiT-XL/2's images credits Peebles and
-  Xie (2023) and names the licence; `make` will print the credit with
+  Xie (2023) and names the licence; `make` prints the credit with
   every grid it writes.
 - **No redistribution from here**: the weights are fetched from their
   sources by each user, not copied into this repository or its
@@ -3394,12 +3413,12 @@ the same inputs, the worst difference as a share of the largest value:
 for 1.8 million parameters, computes what the official code computes
 with 675 million trained weights: the proof of concept stage 7 was for.
 
-**Prediction 3 (speed): right so far, at the fast end.** One pass of
+**Prediction 3 (speed), first measure: at the fast end.** One pass of
 two examples took 1.02 s on the M4, about 233 billion operations a
 second (130 to 240 predicted), which projects to about 8 s for the
 guided pass of a row of 8 photographs (8 to 15 s predicted). The
 decoder took 2.4 s for one photograph (2 to 6 s predicted). The
-sampling runs will time it in use.
+sampling runs time it in use (below).
 
 **Prediction 3 in use: wrong on the fast side.** The grid of 64
 photographs ran at 6.6 to 6.8 s a step for each row of 8 (16 rows of
@@ -3536,7 +3555,15 @@ average, the layout, the pose, the detail.
 **Not predicted: the noise decides the light.** Column 2 is dark in
 nearly every row of both grids (silhouettes against a sunset at w = 1,
 dark backgrounds behind the subject at w = 4), and column 1 pale and
-washed in both. The starting noise sets the overall brightness and
+washed in both.
+
+![Columns 2 and 1 of the guidance-4 grid, then of the guidance-1 grid, across the eight classes](docs/stage7/columns.jpg)
+
+*Each row is one starting noise across the eight classes: noise 2 then
+noise 1 at guidance 4 (top pair), the same two at guidance 1 (bottom
+pair). Noise 2 makes every class dark, noise 1 pale; at guidance 1,
+noise 2 gives nearly the same sunset silhouette whether a geyser, a
+valley or a balloon was asked for (CC BY-NC 4.0; see the notice).* The starting noise sets the overall brightness and
 colour, the coarsest content of the picture, whatever the class: stage
 4's finding that the noise decided the handwriting, and stage 5's that
 the large structure is settled first, at full scale.
@@ -3605,7 +3632,9 @@ own sampler.)
 tiny-llm-in-rust ended by running an open-weight model, SmolLM, with its
 own code. This section asks the same of diffusion: which open models
 exist, which could this project's code run, and what it would take.
-Written as a plan, not yet done.
+Written as a plan before stage 7, which then carried out the first of
+its levels (What supporting latent diffusion would take); kept as
+written, with notes where things have since been done.
 
 ### How representative is this?
 
@@ -3630,16 +3659,17 @@ which lessons transfer, and which are artifacts of the scale?
 
 | Here | In production | What it hides |
 |---|---|---|
-| diffusion on pixels | diffusion on an autoencoder's latent | the two-network design and why it's cheaper; that what a production model diffuses is a learned space, not pixels (Why latent models need their autoencoder, above) |
+| diffusion on pixels (stages 2 to 6) | diffusion on an autoencoder's latent | the two-network design and why it's cheaper; that what a production model diffuses is a learned space, not pixels (Why latent models need their autoencoder, below). Stage 7 runs a latent model |
 | class labels | text prompts, through a text encoder, attended to by the image's tokens | how a sentence, rather than one of ten labels, steers an image |
-| learned absolute positions | rotary positions (RoPE: each query and key rotated by an angle that grows with its position, so attention sees how far apart two tokens are) | that "attend to my neighbour" can be built in rather than learned; possibly part of stage 6's plateau |
+| learned absolute positions (the image DiT) | rotary positions (RoPE: each query and key rotated by an angle that grows with its position, so attention sees how far apart two tokens are) | that "attend to my neighbour" can be built in rather than learned. Stage 6's text model found this the cause of its plateau and now uses RoPE (Decision 8) |
 | thousands of training steps | hundreds of thousands, on far more data | behaviour that appears only with enough training, as stage 6's plateau showed |
 | f32, Euler steps, the weights as trained | bf16, faster samplers, weights averaged over training (EMA, an exponential moving average) | engineering more than ideas |
 
 The first row is the largest gap: every production image model today is
 latent, and a reader who learned diffusion only from stages 2 to 5
 would picture the model working on pixels. The section after next says
-what closing it would take.
+what closing it would take; stage 7 closed it, running DiT-XL/2 on
+latents and decoding them.
 
 ### Open models
 
@@ -3648,7 +3678,7 @@ what closing it would take.
 | MDLM (`kuleshov-group/mdlm-owt`) | masked diffusion on text, stage 6's objective, trained on OpenWebText (an open copy of the web pages GPT-2 learned from) for a million steps, context 1,024 | about GPT-2 small's (around 100 million parameters) | the closest: one transformer, like SmolLM was for tiny-llm-in-rust |
 | LLaDA 8B (`GSAI-ML/LLaDA-8B-Base`) | masked diffusion at scale, trained from scratch, MIT license | 8 billion | too large here: 16 GB in bf16, 32 in this project's f32 |
 | Dream 7B | adapted from Qwen2.5-7B (stage 6, Inference compared) | 7 billion | too large, as LLaDA |
-| DiT-XL/2 (`facebook/DiT-XL-2-256`) | the DiT paper's model: ImageNet (1.3 million photographs in 1,000 classes) images of 256 × 256 pixels, by class, with classifier-free guidance; CC BY-NC 4.0 (non-commercial) | 675 million, plus a 84-million-parameter autoencoder; 3.3 GB | yes, with an autoencoder (below): stage 4 at full scale |
+| DiT-XL/2 (`facebook/DiT-XL-2-256`) | the DiT paper's model: ImageNet (1.3 million photographs in 1,000 classes) images of 256 × 256 pixels, by class, with classifier-free guidance; CC BY-NC 4.0 (non-commercial) | 675 million, plus a 84-million-parameter autoencoder; 3.3 GB | yes, with an autoencoder (below): stage 4 at full scale. Done: stage 7 |
 | Stable Diffusion, FLUX.1 [schnell] (Black Forest Labs' fast model) | text to image; FLUX.1 [schnell] a flow-matching transformer under Apache 2.0 | about 1 billion; 12 billion | no: two more networks, and FLUX's size |
 
 ### Why latent models need their autoencoder
@@ -3719,7 +3749,7 @@ Three levels, in increasing cost:
 
 So the natural endpoint, matching tiny-llm-in-rust's SmolLM, is level
 1: DiT-XL/2 and its decoder, ImageNet images by class, drawn with this
-project's guidance. For text, the counterpart is MDLM, which needs the
+project's guidance. Stage 7 did it. For text, the counterpart is MDLM, which needs the
 GPT-2 tokenizer and its own model's sizes; its rotary positions
 (RoPE), the other piece it needed, stage 6 has now built.
 
@@ -3941,10 +3971,12 @@ tiny-diffusion-in-rust/
 │   │              # style, inside (stage 5); text, textmodel (stage 6);
 │   │              # conv, ditxl, vae (stage 7); main.rs, the commands
 │   └── tests/data # test fixtures
-├── docs/          # figures for this file and the README
+├── docs/          # figures for this file and the README; stage6/: loss curves and
+│                  # their data; stage7/: DiT-XL/2's images (CC BY-NC, see NOTICE.md)
 ├── tools/         # toc.py: this file's table of contents and link check;
 │                  # acronyms.py: every acronym defined at first use;
 │                  # ci/smoke.sh: every command end to end, in seconds;
+│                  # loss_plot.py: training curves as SVG (make stage6-figures);
 │                  # stage7/: download, convert, reference outputs, fixtures (Python with PyTorch)
 ├── .github/       # workflows/main.yaml: formatting, lint and tests, on Linux and macOS
 ├── data/          # downloaded datasets (git-ignored)

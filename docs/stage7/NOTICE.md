@@ -22,6 +22,7 @@ This is a reading of the published licences, not legal advice.
 | `dit.jpg` | 8 classes × 8 starting noises, guidance 4, 50 DDIM steps |
 | `dit-w1.jpg` | the same at guidance 1 |
 | `dit-s4.jpg`, `dit-s10.jpg` | the same at guidance 4 with 4 and 10 steps |
+| `columns.jpg` | two columns (starting noises) of `dit.jpg` and of `dit-w1.jpg`, across the eight classes |
 | `dit-inside.jpg` | eight golden retrievers being generated: the model's guess at steps 0, 7, 14 … 49, then the finished photograph |
 
 The images are half-size copies (1,028 pixels square) of the grids

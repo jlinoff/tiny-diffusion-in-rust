@@ -318,6 +318,16 @@ dit-inside: | $(DIFFUSION) $(OUT) ## Stage 7: the model's guess of the finished 
 	$(call hdr,dit-inside)
 	$(DIFFUSION) dit-inside $(DIT_FILES) --class 207 --noises $(DIT_NOISES) --steps $(DIT_STEPS) --guidance $(DIT_GUIDANCE) -o $(OUT)/dit-inside.png
 
+.PHONY: stage6-figures
+stage6-figures: ## Redraw stage 6's loss curves (docs/stage6/*.svg) from their data files.
+	python3 tools/loss_plot.py docs/stage6/loss-2000.csv -o docs/stage6/loss-2000.svg \
+		--title "Stage 6: 2,000 steps, masked against next-token, learned positions against RoPE" \
+		--ref "6.03:knowing only how common each token is" --ref "3.23:tiny-llm-in-rust (validation)"
+	python3 tools/loss_plot.py docs/stage6/loss-20000.csv -o docs/stage6/loss-20000.svg \
+		--title "Stage 6: 20,000 steps with RoPE" \
+		--ref "6.03:knowing only how common each token is" \
+		--ref "3.23:tiny-llm-in-rust at 2,000 steps (validation)"
+
 dit-fixtures: ## Stage 7, for development: rebuild the tiny random test models (needs PyTorch and diffusers).
 	python3 tools/stage7/fixtures.py diffusion/tests/data
 
