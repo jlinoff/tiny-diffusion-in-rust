@@ -22,6 +22,7 @@ FONT = 13
 CHAR = 7.8          # the width of one character of the monospace font
 SENTENCE = "Once there was a little boy named Josh who was three years old ."
 MASK = "MASK"
+TEXT_X = 178      # where the settling figure's text starts, after its labels
 
 
 def esc(text):
@@ -157,7 +158,7 @@ def draw_moments(blocks, y, line_h):
             spans = "".join(f'<tspan fill="{COLOURS[k]}"'
                             + (' font-weight="bold"' if k == "new" else "")
                             + f'>{esc(t)}</tspan>' for t, k in line)
-            out.append(f'<text x="150" y="{y + 12}" xml:space="preserve">{spans}</text>')
+            out.append(f'<text x="{TEXT_X}" y="{y + 12}" xml:space="preserve">{spans}</text>')
             y += line_h
         y += 16
     return out
@@ -172,7 +173,7 @@ def settling_svg(trace, fractions, context, chars=96):
     shown = rows[max(0, gap[0] - context):min(len(rows), gap[-1] + 1 + context)]
     blocks = moments(shown, steps, fractions, chars)
     line_h = 18
-    width = int(150 + chars * CHAR + 20)
+    width = int(TEXT_X + chars * CHAR + 20)
     height = 52 + sum(len(b[2]) * line_h + 16 for b in blocks) + 30
     out = svg_open(width, height, f"Infilling a story's middle, {order} order, {steps} steps")
     out += draw_moments(blocks, 52, line_h)

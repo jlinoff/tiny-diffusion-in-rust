@@ -3077,6 +3077,31 @@ sides of a gap is what a masked model is trained for; at this size
 and this loss, it takes the setting from them (a mother, a child,
 dialogue) but not the subject.
 
+How the gap fills, step by step (`sample-text` records the step at which
+each position settled, kept in `docs/stage6/infill-trace-confidence.tsv`
+and `docs/stage6/infill-trace-random.tsv`; tokens never
+change once settled, so that is the whole generation):
+
+![The infill in confidence order, at 0, 10, 25, 50, 75 and 100% of its 256 steps](docs/stage6/settling-confidence.svg)
+
+![The infill in random order, at the same moments](docs/stage6/settling-random.svg)
+
+*Confidence order (top) fills the gap from its edges inward: first the
+tokens beside the story (a full stop, "The next day, he", the full stop
+before "Then Josh asked"), then sentence frames ("His mom smiled and
+said"), the middle last, and last of all the content words the model is
+least sure of ("safe", "grass", "touch", "Mommy"), which depend on
+everything around them; its loop ("I'm sorry, Mommy," twice) is visible
+too. Random order (bottom) settles positions scattered across the whole
+gap from the start, with no such structure, and ends one story and
+begins another in the middle.*
+
+**Reproducible, training too.** `make text` trained the 20,000-step
+model again, 35 minutes in a new process, and wrote a file byte for
+byte the same as the first run's (the bound 3.4869 ± 0.0499 again, to
+the last digit): 41 million tokens of random windows and random masks
+through AdamW, reproduced from the seed.
+
 ### What stage 6 taught
 
 1. **A control separates a bug from a finding.** Three runs stuck at
@@ -3984,7 +4009,8 @@ tiny-diffusion-in-rust/
 │                  # acronyms.py: every acronym defined at first use;
 │                  # ci/smoke.sh: every command end to end, in seconds;
 │                  # loss_plot.py: training curves as SVG (make stage6-figures);
-│                  # text_figures.py: masking and infill figures (make stage6-text-figures);
+│                  # text_figures.py: masking and infill figures, from the infill traces
+│                  # kept in docs/stage6/ (make stage6-text-figures);
 │                  # stage7/: download, convert, reference outputs, fixtures (Python with PyTorch)
 ├── .github/       # workflows/main.yaml: formatting, lint and tests, on Linux and macOS
 ├── data/          # downloaded datasets (git-ignored)

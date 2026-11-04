@@ -329,13 +329,14 @@ stage6-figures: ## Redraw stage 6's loss curves (docs/stage6/*.svg) from their d
 		--ref "3.23:tiny-llm-in-rust at 2,000 steps (validation)"
 
 .PHONY: stage6-text-figures
-stage6-text-figures: ## Stage 6's text figures: masking, and the infill step by step from make text-sample's traces.
+stage6-text-figures: ## Stage 6's text figures: masking, and the infill step by step from its traces in docs/stage6/.
 	python3 tools/text_figures.py masking -o docs/stage6/masking.svg
-	@for o in confidence random; do \
-		t=$(OUT)/text-infill-trace.tsv; test $$o = random && t=$(OUT)/text-random-infill-trace.tsv; \
-		if test -e $$t; then python3 tools/text_figures.py settling $$t -o docs/stage6/settling-$$o.svg; \
-		else echo "no $$t: make text-sample writes it"; fi; \
+	for o in confidence random; do \
+		python3 tools/text_figures.py settling docs/stage6/infill-trace-$$o.tsv \
+			-o docs/stage6/settling-$$o.svg || exit 1; \
 	done
+	@echo "(new traces: copy out/text-infill-trace.tsv and out/text-random-infill-trace.tsv,"
+	@echo " written by make text-sample, to docs/stage6/infill-trace-confidence.tsv and -random.tsv)"
 
 dit-fixtures: ## Stage 7, for development: rebuild the tiny random test models (needs PyTorch and diffusers).
 	python3 tools/stage7/fixtures.py diffusion/tests/data
