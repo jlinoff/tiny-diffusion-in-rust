@@ -1,5 +1,8 @@
 # tiny-diffusion-in-rust: a small diffusion model, built from scratch to learn how image generation works
 
+[![Release](https://img.shields.io/github/v/release/jlinoff/tiny-diffusion-in-rust)](https://github.com/jlinoff/tiny-diffusion-in-rust/releases)
+[![Workflow](https://github.com/jlinoff/tiny-diffusion-in-rust/actions/workflows/main.yaml/badge.svg)](https://github.com/jlinoff/tiny-diffusion-in-rust/actions/workflows/main.yaml)
+
 This project builds a diffusion model by hand, in Rust with no
 machine-learning framework, small enough to read and to run on a laptop: the
 kind of model that turns random noise into an image by many small steps. It
