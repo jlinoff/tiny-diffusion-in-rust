@@ -74,6 +74,8 @@ step "sample-text"
 $D sample-text --model "$T/text.safetensors" --tokenizer diffusion/tests/data/tiny.bpe \
     --ids diffusion/tests/data/tiny.ids --steps 2,8 --n 2 --out-prefix "$T/text"
 python3 tools/text_stats.py "$T/text-real.txt" --tiny-llm "$T/text-s2.txt" "$T/text-s8.txt"
+python3 tools/text_figures.py settling "$T/text-infill-trace.tsv" -o "$T/settling.svg" > /dev/null
+python3 tools/text_figures.py masking -o "$T/masking.svg" > /dev/null
 python3 -c 'import sys; sys.exit(open(sys.argv[1], "rb").read(8) != b"\x89PNG\r\n\x1a\n")' "$T/img.png"
 grep -q '<circle' "$T/m-flow.svg"
 printf '\nEvery command ran.\n'

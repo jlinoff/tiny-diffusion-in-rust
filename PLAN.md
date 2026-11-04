@@ -2170,6 +2170,13 @@ noise is **masking** instead: a special MASK token replacing a real one.
   with probability 1 − t, in this project's convention (t = 0 is noise,
   t = 1 data): every token at t = 0, none at t = 1. A fully masked
   sequence is the text equivalent of pure static.
+
+  ![One sentence masked at t = 1, 0.75, 0.5, 0.25 and 0](docs/stage6/masking.svg)
+
+  *Text's noise. Each token draws one random number and is masked
+  when it falls below 1 − t, so as t falls more tokens are masked and
+  none returns: the text counterpart of an image dissolving into
+  static.*
 - **Training**: take a text, pick t, mask each token with probability
   1 − t, and train the model to predict the original token at every
   masked position: a cross-entropy loss over the masked positions only.
@@ -3977,6 +3984,7 @@ tiny-diffusion-in-rust/
 │                  # acronyms.py: every acronym defined at first use;
 │                  # ci/smoke.sh: every command end to end, in seconds;
 │                  # loss_plot.py: training curves as SVG (make stage6-figures);
+│                  # text_figures.py: masking and infill figures (make stage6-text-figures);
 │                  # stage7/: download, convert, reference outputs, fixtures (Python with PyTorch)
 ├── .github/       # workflows/main.yaml: formatting, lint and tests, on Linux and macOS
 ├── data/          # downloaded datasets (git-ignored)

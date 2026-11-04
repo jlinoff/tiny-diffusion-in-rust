@@ -1493,6 +1493,30 @@ fn sample_text(
             "Wrote {} (a held-out story's middle third, filled in)",
             path.display()
         );
+        // The trace: every position's token and the step it was settled
+        // at (-1: given, never masked). Tokens never change once settled,
+        // so this is the whole generation; tools/text_figures.py draws it.
+        let esc = |t: &str| {
+            t.replace('\\', "\\\\")
+                .replace('\t', "\\t")
+                .replace('\n', "\\n")
+        };
+        let order = if s.random_order {
+            "random"
+        } else {
+            "confidence"
+        };
+        let mut trace = format!("# steps\t{st}\torder\t{order}\n# position\tsettled at\ttoken\n");
+        for (i, &t) in g.tokens.iter().enumerate() {
+            let at = g.settled_at[i].map_or(-1, |k| k as i64);
+            trace.push_str(&format!("{i}\t{at}\t{}\n", esc(&vocab.decode(&[t]))));
+        }
+        let path = PathBuf::from(format!("{prefix}-infill-trace.tsv"));
+        std::fs::write(&path, trace).map_err(|e| format!("can't write {}: {e}", path.display()))?;
+        println!(
+            "Wrote {} (the infill step by step, for tools/text_figures.py)",
+            path.display()
+        );
     }
     Ok(())
 }
