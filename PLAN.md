@@ -115,6 +115,13 @@ it is first needed, and its entry here gives a short definition and a
 link. Either way, a term's first use defines it or links to its
 definition.
 
+The groups follow the order a reader meets the ideas: what a diffusion
+model is and does, the two ways to train one, how it generates, the
+networks that learn the velocity, steering what it generates, how the
+code is tested, how generated images are measured, text, and latents
+(stage 7). Within a group, a definition uses only terms defined above
+it. Each group opens with a line saying what it collects.
+
 Terms already defined in tiny-llm-in-rust's PLAN.md mean the same here
 and aren't repeated: weights, tensor, gradient, loss, cross-entropy, backpropagation, automatic differentiation (the tape),
 Adam, AdamW (Adam with decoupled weight decay), learning rate, batch,
@@ -130,10 +137,21 @@ floating-point operations; GFLOP/s, a billion per second).
 **Notation.** A raised dot is multiplication by a number: in
 x_t = (1 − t)·x₀ + t·x₁, the number 1 − t multiplies every value of the
 noise x₀ (every pixel, for an image) and t every value of the data x₁.
+For example, 3 times a matrix multiplies every entry by 3:
+
+```
+    | 1 2 |   |  3  6 |
+3 · | 3 4 | = |  9 12 |
+    | 5 6 |   | 15 18 |
+```
+
 It is never a dot product, and × in the text means "by", as in a 28 × 28
 image, never a cross product.
 
 ### What a diffusion model does
+
+What is being built, before how: the model, its noise, its time, and
+the picture of an example as a point.
 
 - **generative model**: a model that produces new examples that look like
   its training data: new images of digits, say, not a label for an
@@ -165,6 +183,9 @@ image, never a cross product.
 
 ### Two ways to train one
 
+How the network learns: flow matching, which this project uses, and
+DDPM, the original recipe it's compared with.
+
 - **flow matching**, **rectified flow**: draw a data example x₁, a noise
   sample x₀ and a time t between 0 and 1; mix them in a straight line,
   x_t = (1 − t)·x₀ + t·x₁; and train the model to predict the direction of
@@ -191,6 +212,9 @@ image, never a cross product.
 
 ### Generating
 
+How a trained network makes a new example, by solving an equation one
+step at a time.
+
 - **ordinary differential equation** (**ODE**): an equation for how a
   quantity changes, here dx/dt = v(x, t): the position x moves along the
   velocity field. Generating with flow matching means solving it from
@@ -198,15 +222,17 @@ image, never a cross product.
 - **Euler step**: the simplest way to solve it: x ← x + v(x, t)·Δt, a short
   straight step along the current velocity. Twenty to fifty steps are
   typical; fewer give blurrier results, because the true path curves
-  between steps.
+  between steps (drawn in [Generation](#generation-inference)).
 - **sampling**: generating an example, in diffusion as in language models.
   Every starting noise gives a different example, the way every seed gave
   a different story.
 
 ### The networks
 
+The networks that learn the velocity, and their parts.
+
 - **MLP** (multilayer perceptron): matrix products with a nonlinearity
-  between them, nothing else. Big enough for points in a plane (stage 1).
+  between them, nothing else. Big enough for points in a plane (stage 2).
 - **time embedding**: t turned into a vector, by sines and cosines of t at
   several frequencies, so the network can tell nearby times apart. The
   same idea as tiny-llm-in-rust's position embeddings, applied to time.
@@ -232,6 +258,8 @@ image, never a cross product.
 
 ### Steering
 
+Asking for a particular kind of example (stage 4).
+
 - **conditioning**: giving the model extra information to generate from,
   such as which digit to draw.
 - **classifier-free guidance** (Ho and Salimans 2022): train the model both
@@ -246,6 +274,8 @@ image, never a cross product.
   needs ([Stage 4, What it adds](#what-it-adds)).
 
 ### Testing
+
+How the code is checked ([Design for test](#design-for-test)).
 
 - **closed form**: an exact answer from a formula, with no network, to
   check a trained one or a sampler against; Gaussian data has one for
@@ -262,6 +292,9 @@ image, never a cross product.
   (`tools/ci/smoke.sh`, part of `make test`).
 
 ### Images measured
+
+The instruments that turn generated images into numbers (stages 4
+and 5).
 
 - **the classifier**: a small network trained on MNIST (the standard set
   of 70,000 handwritten digits, 28 × 28 pixels, stage 3's data) to name the digit
@@ -292,6 +325,8 @@ image, never a cross product.
   How it will be tested](#how-it-will-be-tested-1)).
 
 ### Text and its measures
+
+Diffusion applied to text, and how it's scored (stage 6).
 
 - **autoregressive**: generating one token at a time, each from the
   tokens before it, as tiny-llm-in-rust's model does ([Compared with
@@ -354,6 +389,8 @@ image, never a cross product.
 
 ### Latent diffusion
 
+How large image models work on compressed images (stage 7).
+
 - **latent**, **autoencoder**, **VAE** (variational autoencoder): a
   latent is a compressed copy of an image, made by an autoencoder, a
   network trained to squeeze an image down and expand it back; large
@@ -367,15 +404,18 @@ image, never a cross product.
   position's neighbourhood laid out as a row ([How DiT-XL/2
   differs](#how-dit-xl2-differs-from-this-projects-dit)).
 - **convolution**, **group normalization**, **upsampling**: the
-  autoencoder's layers, which this project hasn't built: a small learned
-  filter slid across the image; normalization over groups of channels;
-  doubling the image's width and height ([What supporting latent
-  diffusion would take](#what-supporting-latent-diffusion-would-take)).
+  autoencoder's layers, built in stage 7 for its decoder: a small
+  learned filter slid across the image; normalization over groups of
+  channels; doubling the image's width and height ([Stage 7, What was
+  built](#what-was-built-5)).
 
 ## The flows
 
-There are two flows, as in tiny-llm-in-rust: training, which adjusts the
-weights, and generation (inference), which uses them frozen. Both are the
+There are two flows: training, which adjusts the weights, and generation
+(inference), which uses them frozen. They are tiny-llm-in-rust's train
+and generate, two parts of its LLM (large language model) flow; its
+other three flows (word2vec, attention and bench) have no counterpart
+here. Both are the
 same at every stage, whatever the data (points, images, later text).
 "Step" means something different in each:
 
@@ -388,7 +428,7 @@ same at every stage, whatever the data (points, images, later text).
 ### Training
 
 ```
-repeat, one training step at a time:
+for step = 1 … steps:                     steps, the number of training steps, a hyperparameter
   x₁ = a batch of real examples
   x₀ = noise of the same shape; t = random in [0, 1], one per example
   x_t = (1 − t)·x₀ + t·x₁                 a point on each straight line
@@ -421,10 +461,24 @@ for t = 0, Δt, 2Δt, … < 1:                one sampling step each
 x is a new example
 ```
 
-Only generation runs the whole path, one Euler step at a time, with the
-weights frozen. The number of steps is a choice: more follow the curved
+Generation is where the ODE is solved: each Euler step is one step of
+solving dx/dt = v(x, t) numerically, so only generation runs the whole
+path, one Euler step at a time, with the weights frozen. The number of steps is a choice: more follow the curved
 paths more faithfully, fewer are faster and blurrier. Each new starting
 noise gives a different example, as each seed gave a different story.
+
+![The Euler step: one step along the velocity, landing off the curved true path; and the whole journey in 2, 4 and 16 steps](docs/euler.svg)
+
+*The Euler step ([how to read it](#how-to-read-the-figures)). The field
+here is a rotation, chosen because its true paths are known exactly:
+circles. Each step goes straight along the velocity where it starts,
+and the path curves away, so the step lands off it; with 2 steps the
+journey ends 62% too far out, with 16 steps 8%. Flow matching's paths
+are much straighter than these circles (straight training lines are the
+point of the method), which is why few steps serve it well: this field
+shows the mechanism, not a real model's error. An image is a point in
+784 dimensions rather than 2, and the step is the same, applied to
+every coordinate at once.*
 
 Compared with tiny-llm-in-rust's generation: both are repeated passes
 through the network with the weights frozen, but there each pass added
@@ -436,40 +490,54 @@ the example changes at every sampling step.
 
 ## Order of work
 
-1. **Foundation** (done): the matrices, tape, BLAS support, random numbers
-   and safetensors files, copied from tiny-llm-in-rust with their tests;
+Each item is a stage, built once and in order, and from stage 2 on each
+has its own section below. Each says what it builds (its programs) and
+what it measures (its experiments), mirroring its section's "What was
+built" and its predictions and results. tiny-llm-in-rust's counterparts are the items
+in its Order of work; its numbered steps are something else, the links
+of one pipeline run (tokenize to generate).
+
+1. **Foundation** (done).
+   *Builds:* the matrices, tape, BLAS support, random numbers and
+   safetensors files, copied from tiny-llm-in-rust with their tests;
    `make test` and continuous integration from the first commit.
+   *Measures:* nothing yet; its tests are its results.
 2. **Points in a plane** (done: see [Stage 2](#stage-2-points-in-a-plane)).
-   Flow matching with a small MLP on 2D data (two
-   interleaved half-moons, a spiral, a ring of Gaussians), each example two
-   numbers. Training takes seconds; every step can be plotted as SVG (a
-   text format for drawings that browsers display): the data, the learned
-   velocity field as arrows, sample paths from noise to data, and how the
-   result degrades with fewer Euler steps. Then DDPM on the same data, for
-   comparison: what the 1,000 steps buy and cost.
-3. **Small images** (done: see [Stage 3](#stage-3-images)). A DiT on
-   28 × 28 grayscale digits (see [Decisions](#decisions) for the data): patches, attention
-   without the causal mask, adaLN conditioning on time, a velocity per
-   pixel. Grids of generated digits as image files, and the same picture
-   at successive steps of one generation, noise sharpening into a digit.
+   *Builds:* flow matching with a small MLP on 2D data (two interleaved
+   half-moons, a spiral, a ring of Gaussians), each example two numbers,
+   then DDPM on the same data; plots as SVG (a text format for drawings
+   that browsers display): the data, the learned velocity field as
+   arrows, sample paths from noise to data. *Measures:* how the result
+   degrades with fewer Euler steps, and what DDPM's 1,000 steps buy and
+   cost.
+3. **Small images** (done: see [Stage 3](#stage-3-images)).
+   *Builds:* a DiT on 28 × 28 grayscale digits (see
+   [Decisions](#decisions) for the data): patches, attention without the
+   causal mask, adaLN conditioning on time, a velocity per pixel; grids
+   of generated digits as image files, and the same picture at successive
+   steps of one generation. *Measures:* the patch size, a hyperparameter,
+   and digits against Fashion-MNIST's clothing.
 4. **Conditioning and guidance** (done: see [Stage
-   4](#stage-4-conditioning-and-guidance)). The digit's class as a condition,
-   and classifier-free guidance: "draw a 7", and what the guidance scale
-   trades.
-5. **Looking inside** (done: see [Stage 5](#stage-5-looking-inside)):
-   what the velocity field looks like at each t, which patches attend to
-   which, and how early in generation the digit's identity is settled
-   (stage 3's progress rows already answer that roughly: by t = 0.5).
-6. **Text** (done: see [Stage 6](#stage-6-text)): a masked diffusion
-   language model on TinyStories (tiny-llm-in-rust's corpus of short,
-   simple stories), reusing tiny-llm-in-rust's tokenizer, compared with
-   tiny-llm-in-rust's model at the same size.
-7. **A real model** (done: see [Stage 7](#stage-7-a-real-model)):
-   generating images with DiT-XL/2, the DiT paper's own trained model,
-   through this project's code, as tiny-llm-in-rust ran SmolLM (an
-   open-weight language model of 1.7 billion parameters). Its
-   weights are downloaded by the user under their own licences, never
-   kept in this repository.
+   4](#stage-4-conditioning-and-guidance)). *Builds:* a classifier to
+   measure with, the digit's class as a condition, and classifier-free
+   guidance: "draw a 7". *Measures:* what the guidance scale trades.
+5. **Looking inside** (done: see [Stage 5](#stage-5-looking-inside)).
+   *Builds:* instruments only. *Measures:* what the velocity field looks
+   like at each t, which patches attend to which, and how early in
+   generation the digit's identity is settled (stage 3's progress rows
+   already answer that roughly: by t = 0.5).
+6. **Text** (done: see [Stage 6](#stage-6-text)). *Builds:* a masked
+   diffusion language model on TinyStories (tiny-llm-in-rust's corpus of
+   short, simple stories), reusing tiny-llm-in-rust's tokenizer.
+   *Measures:* it against tiny-llm-in-rust's model at the same size, and
+   learned positions against RoPE.
+7. **A real model** (done: see [Stage 7](#stage-7-a-real-model)).
+   *Builds:* the code to run DiT-XL/2, the DiT paper's own trained model,
+   and its image decoder, as tiny-llm-in-rust ran SmolLM (an open-weight
+   language model of 1.7 billion parameters). Its weights are downloaded
+   by the user under their own licences, never kept in this repository.
+   *Measures:* nothing to tune, since its settings came with it: guidance,
+   the number of steps, and what the model has decided at each step.
 
 Each stage ends the way tiny-llm-in-rust's did: predictions written down
 first, then the measurements, including the ones that turn out wrong.
@@ -487,8 +555,9 @@ rather than rebuilt, and this project starts at diffusion itself.
 Nothing in this section is specific to diffusion; every later stage
 stands on it.
 
-Copied from tiny-llm-in-rust's `transformer/src/` (each file says so at the
-top), and checked by its own tests, which came along:
+Copied from tiny-llm-in-rust's `transformer/src/` into this project's
+`diffusion/src/` (each file says so at the top), and checked by its own
+tests, which came along:
 
 | File | What it holds |
 |---|---|
@@ -514,6 +583,20 @@ cache) has no counterpart here: a diffusion model has no tokens to predict
 in order, so nothing to cache between passes.
 
 ## Design for test
+
+Design for test comes from chip design, where a circuit is built so
+that its internal state can be set (controllability) and read
+(observability); otherwise a fault deep inside can't be found from the
+pins. The same idea serves a project like this one. Every piece states
+what it should do, in a form a test can check, so a mistake shows up in
+the piece that made it rather than stages later as a vague symptom.
+Controllability here is fixed seeds, closed-form inputs and tiny
+fixtures; observability is intermediates, traces and progress output.
+It paid off repeatedly: stage 6's next-token control told a code bug
+from a property of the masked objective; stage 7's per-layer fixtures
+found two places where diffusers and the original code differ, to
+1e-6, without the real weights; and the golden loss lets any later
+change prove it didn't alter training.
 
 tiny-llm-in-rust added its test harness after its first release; its
 experiments had been checked by eye, and the checks became tests only
@@ -578,9 +661,11 @@ Every stage produces figures, and they're built to be read the same way.
 This section is for a reader new to diffusion. It starts with stage 2's
 figures (`make stage2`, then open `out/*.svg` in a browser), then takes
 each later kind of figure in the order the stages introduce it: image
-grids (stage 3), labelled digit grids (4), preview grids and attention
-maps (5), loss curves and text figures (6), photograph grids and the
-guess during generation (7).
+grids (stage 3), labelled digit grids (stage 4), preview grids and
+attention maps (stage 5), loss curves and text figures (stage 6),
+photograph grids and the guess during generation (stage 7). Not every
+figure is a picture: stage 6's are plots and text. The Euler step's
+figure, in The flows, is read like stage 2's.
 
 **The picture to keep in mind: a wind map.** The trained network is a
 wind map that changes with time: at every point and every moment t, which
@@ -780,7 +865,12 @@ the points for images and the MLP for a transformer, and keeps the
 training loop and the sampler. This stage also settled flow matching as
 the method for the rest ([Decisions](#decisions), 6).
 
+**Done.** One of the three core stages (2 to 4), which together make a
+generator that draws the image asked for.
+
 ### What was built
+
+The Rust source files named here are in `diffusion/src/`.
 
 - `data2d.rs`: the four data sets (moons, spiral, rings, gaussian),
   unlimited and reproducible, and Gaussian noise.
@@ -970,7 +1060,11 @@ does the model learn first? Its limit is the starting point of stage 4:
 the model can't be told which digit to draw, and about a third of its
 samples land between digits.
 
+**Done.** One of the three core stages (2 to 4).
+
 ### What was built
+
+The Rust source files named here are in `diffusion/src/`.
 
 - **The tape's new operations**: attention without the causal mask
   (checked against finite differences, and for **permutation
@@ -1468,10 +1562,11 @@ classifier, so that results are counted rather than judged by eye. With
 it the generator is complete in the sense the project set out to reach:
 noise in, the requested image out.
 
-Written before any code: the plan, the tests, and the predictions, each
-with its mechanism and a numeric check (the convention from
-[What stage 3 taught](#what-stage-3-taught), 7). Developed with 7 × 7
-patches and confirmed once with 4 × 4 ([Decisions](#decisions), 7).
+**Done.** The last of the three core stages (2 to 4). Written before any
+code: the plan, the tests, and the predictions, each with its mechanism
+and a numeric check (the convention from [What stage 3
+taught](#what-stage-3-taught), 7). Developed with 7 × 7 patches and
+confirmed once with 4 × 4 ([Decisions](#decisions), 7).
 
 ### What it adds
 
@@ -1612,7 +1707,8 @@ Written before any code. Each gives its mechanism and a numeric check.
 ### What was built
 
 Stage 4 is built in two steps: the instrument first, because every later
-measurement depends on it, then the conditioning.
+measurement depends on it, then the conditioning. The Rust source files
+named here are in `diffusion/src/`.
 
 - `classify.rs`: the classifier as planned (two hidden layers of 256,
   GELU between them, as in stage 2's network; 269,322 parameters, a test
@@ -1928,8 +2024,9 @@ samples. This one looks inside the trained models, as tiny-llm-in-rust's
 computes along the way from noise to image. It needs no new model, and
 stage 4's classifier serves as one of its probes.
 
-Optional. Written before any code, as stage 4 was: the probes, their
-tests, and predictions with mechanisms and numeric checks. It reads
+**Done.** Planned as optional, beyond the core stages 2 to 4, which
+already make a working generator. Written before any code, as stage 4
+was: the probes, their tests, and predictions with mechanisms and numeric checks. It reads
 stage 3's `digits` model (4 × 4 patches, no labels) and stage 4's
 `digits-cond-p4` (the same with labels), so it trains nothing.
 
@@ -2038,6 +2135,8 @@ Written before any code. Each gives its mechanism and a numeric check.
    measured attention.
 
 ### What was built
+
+The Rust source files named here are in `diffusion/src/`.
 
 - `inside.rs`: the guess of the finished image, straightness and where
   the bending lies, class means, the commitment curve, attention
@@ -2234,7 +2333,7 @@ static, and the point where the two projects meet: a diffusion language
 model compared with tiny-llm-in-rust's, at the same size and on the same
 stories.
 
-Optional, like stage 5. Its first two parts, how text diffusion works
+**Done.** Planned as optional, like stage 5. Its first two parts, how text diffusion works
 and how it compares with tiny-llm-in-rust's model, were written early,
 as an explanation, and are kept as written; the plan, tests and
 predictions that follow them were written when the stage began, before
@@ -2551,6 +2650,8 @@ Written before any code. Each gives its mechanism and a numeric check.
    them first.
 
 ### What was built
+
+The Rust source files named here are in `diffusion/src/`.
 
 - `text.rs`: tiny-llm-in-rust's token-ID file, its held-out split (the
   last round(5%) of the tokens) and its random windows (the same
@@ -3241,9 +3342,10 @@ through AdamW, reproduced from the seed.
 
 ## Stage 7: a real model
 
-**Done.** This section records the terms under which the models it
-uses may be used, the plan and the predictions (all written before any
-code), then what was built, the results, and what the stage taught.
+**Done.** Beyond the core stages, like stages 5 and 6. This section
+records the terms under which the models it uses may be used, the plan
+and the predictions (all written before any code), then what was built,
+the results, and what the stage taught.
 
 ### Where it fits
 
@@ -3456,6 +3558,8 @@ Written before any code, each with its mechanism and its check:
    preview grid, by eye.
 
 ### What was built
+
+The Rust source files named here are in `diffusion/src/`.
 
 - `conv.rs`: convolution by im2col, group normalization, upsampling,
   SiLU, each checked against a direct calculation.
@@ -3843,7 +3947,8 @@ Three levels, in increasing cost:
    decoder stacks them with **group normalization** (layer normalization
    over groups of channels), SiLU, residual connections, one
    self-attention block, and **upsampling** (doubling the image's width
-   and height). For generation only, these need forward passes, no
+   and height). (Since built, in stage 7: see [What was
+   built](#what-was-built-5).) For generation only, these need forward passes, no
    gradients: a convolution can be computed as a matrix product (each
    position's neighbourhood laid out as a row, then multiplied by the
    filters), using the matrix code that exists. Checked the way
@@ -4085,8 +4190,9 @@ tiny-diffusion-in-rust/
 ├── README.md      # a short introduction, for GitHub
 ├── PLAN.md        # this file
 ├── LICENSE        # MIT
-├── Makefile       # make test runs every check; one target per step as stages arrive
-├── diffusion/     # the Rust crate: the library and the `diffusion` command
+├── Makefile       # make test runs every check; make help lists the targets
+├── diffusion/     # the Rust crate: the library and the `diffusion` command;
+│   │              # a .rs file named without a folder in this plan is in src/
 │   ├── src/       # tensor, tape, blas, rng, safetensors (the foundation);
 │   │              # data2d, flow, ddpm, mlp, optim, train2d, svg, metrics (stage 2);
 │   │              # image, dit, trainimg (stage 3); classify (stage 4);
@@ -4098,6 +4204,7 @@ tiny-diffusion-in-rust/
 ├── tools/         # toc.py: this file's table of contents and link check;
 │                  # acronyms.py: every acronym defined at first use;
 │                  # ci/smoke.sh: every command end to end, in seconds;
+│                  # euler_figure.py: the Euler step, drawn (make euler-figure);
 │                  # loss_plot.py: training curves as SVG (make stage6-figures);
 │                  # text_figures.py: masking and infill figures, from the infill traces
 │                  # kept in docs/stage6/ (make stage6-text-figures);

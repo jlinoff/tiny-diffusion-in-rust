@@ -1,0 +1,267 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="862" height="528" viewBox="0 0 862 528" font-family="sans-serif" font-size="12">
+<defs><marker id="faint" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#b9c4cf"/></marker><marker id="step" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#e07b00"/></marker></defs>
+<rect width="862" height="528" fill="white"/>
+<text x="16" y="24" font-size="14" font-weight="bold">The Euler step: follow the velocity in a straight line for Δt</text>
+<clipPath id="clip-zoom"><rect x="16" y="64" width="400" height="400"/></clipPath>
+<rect x="16" y="64" width="400" height="400" fill="white" stroke="#888"/>
+<text x="16" y="56" font-weight="bold">One Euler step, Δt = 1/2 (zoomed in)</text>
+<g clip-path="url(#clip-zoom)">
+<line x1="29.3" y1="450.7" x2="33.1" y2="444.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="406.2" x2="30.3" y2="400.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="361.8" x2="27.5" y2="355.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="317.3" x2="24.7" y2="311.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="272.9" x2="21.9" y2="266.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="228.4" x2="19.1" y2="222.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="184.0" x2="16.3" y2="177.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="139.6" x2="13.6" y2="133.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="95.1" x2="10.8" y2="89.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="29.3" y1="50.7" x2="8.0" y2="44.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="450.7" x2="77.5" y2="441.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="406.2" x2="74.8" y2="397.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="361.8" x2="72.0" y2="352.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="317.3" x2="69.2" y2="308.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="272.9" x2="66.4" y2="264.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="228.4" x2="63.6" y2="219.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="184.0" x2="60.8" y2="175.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="139.6" x2="58.0" y2="130.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="95.1" x2="55.2" y2="86.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="73.8" y1="50.7" x2="52.4" y2="41.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="450.7" x2="122.0" y2="439.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="406.2" x2="119.2" y2="394.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="361.8" x2="116.4" y2="350.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="317.3" x2="113.6" y2="305.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="272.9" x2="110.8" y2="261.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="228.4" x2="108.0" y2="216.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="184.0" x2="105.2" y2="172.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="139.6" x2="102.4" y2="127.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="95.1" x2="99.7" y2="83.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="118.2" y1="50.7" x2="96.9" y2="39.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="450.7" x2="166.4" y2="436.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="406.2" x2="163.6" y2="391.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="361.8" x2="160.9" y2="347.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="317.3" x2="158.1" y2="302.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="272.9" x2="155.3" y2="258.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="228.4" x2="152.5" y2="214.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="184.0" x2="149.7" y2="169.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="139.6" x2="146.9" y2="125.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="95.1" x2="144.1" y2="80.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="162.7" y1="50.7" x2="141.3" y2="36.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="450.7" x2="210.9" y2="433.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="406.2" x2="208.1" y2="389.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="361.8" x2="205.3" y2="344.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="317.3" x2="202.5" y2="300.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="272.9" x2="199.7" y2="255.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="228.4" x2="196.9" y2="211.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="184.0" x2="194.1" y2="166.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="139.6" x2="191.3" y2="122.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="95.1" x2="188.5" y2="77.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="207.1" y1="50.7" x2="185.7" y2="33.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="450.7" x2="255.3" y2="430.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="406.2" x2="252.5" y2="386.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="361.8" x2="249.7" y2="341.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="317.3" x2="246.9" y2="297.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="272.9" x2="244.2" y2="252.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="228.4" x2="241.4" y2="208.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="184.0" x2="238.6" y2="164.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="139.6" x2="235.8" y2="119.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="95.1" x2="233.0" y2="75.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="251.6" y1="50.7" x2="230.2" y2="30.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="450.7" x2="299.8" y2="427.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="406.2" x2="297.0" y2="383.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="361.8" x2="294.2" y2="338.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="317.3" x2="291.4" y2="294.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="272.9" x2="288.6" y2="250.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="228.4" x2="285.8" y2="205.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="184.0" x2="283.0" y2="161.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="139.6" x2="280.2" y2="116.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="95.1" x2="277.4" y2="72.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="296.0" y1="50.7" x2="274.6" y2="27.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="450.7" x2="344.2" y2="425.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="406.2" x2="341.4" y2="380.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="361.8" x2="338.6" y2="336.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="317.3" x2="335.8" y2="291.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="272.9" x2="333.0" y2="247.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="228.4" x2="330.3" y2="202.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="184.0" x2="327.5" y2="158.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="139.6" x2="324.7" y2="113.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="95.1" x2="321.9" y2="69.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="340.4" y1="50.7" x2="319.1" y2="25.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="450.7" x2="388.7" y2="422.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="406.2" x2="385.9" y2="377.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="361.8" x2="383.1" y2="333.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="317.3" x2="380.3" y2="288.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="272.9" x2="377.5" y2="244.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="228.4" x2="374.7" y2="200.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="184.0" x2="371.9" y2="155.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="139.6" x2="369.1" y2="111.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="95.1" x2="366.7" y2="67.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="384.9" y1="50.7" x2="364.9" y2="24.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="450.7" x2="433.1" y2="419.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="406.2" x2="430.3" y2="375.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="361.8" x2="427.5" y2="330.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="317.3" x2="424.7" y2="286.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="272.9" x2="421.9" y2="241.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="228.4" x2="419.1" y2="197.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="184.0" x2="416.5" y2="153.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="139.6" x2="414.3" y2="109.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="95.1" x2="412.3" y2="66.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="429.3" y1="50.7" x2="410.5" y2="23.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+</g>
+<polyline points="266.0,390.7 265.9,381.9 265.5,373.2 265.0,364.5 264.2,355.8 263.1,347.2 261.9,338.5 260.4,329.9 258.7,321.4 256.8,312.9 254.6,304.4 252.3,296.0 249.7,287.7 246.9,279.4 243.9,271.2 240.6,263.1 237.2,255.1 233.5,247.2 229.7,239.3 225.6,231.6 221.3,224.0 216.9,216.5 212.2,209.1 207.4,201.9 202.3,194.7 197.1,187.7 191.7,180.9 186.1,174.2 180.4,167.6 174.5,161.2 168.4,155.0 162.1,148.9 155.7,143.0 149.1,137.2 142.4,131.6 135.6,126.2 128.6,121.0 121.5,116.0 114.2,111.1 106.8,106.5 99.3,102.0 91.7,97.7 84.0,93.7 76.2,89.8 68.2,86.2 60.2,82.7 52.1,79.5 43.9,76.5 35.7,73.6 27.3,71.1 18.9,68.7 10.5,66.5 2.0,64.6 -6.6,62.9 -15.2,61.4 -23.8,60.2 -32.5,59.2 -41.2,58.4 -49.9,57.8 -58.6,57.4 -67.3,57.3" fill="none" stroke="#222" stroke-width="1.6" stroke-dasharray="5 4" clip-path="url(#clip-zoom)"/>
+<line x1="266.0" y1="390.7" x2="266.0" y2="128.9" stroke="#e07b00" stroke-width="2.5" marker-end="url(#step)"/>
+<line x1="266.0" y1="128.9" x2="168.4" y2="155.0" stroke="#b03a8c" stroke-width="1.5" stroke-dasharray="3 3"/>
+<circle cx="266.0" cy="390.7" r="3.5" fill="#222"/>
+<circle cx="168.4" cy="155.0" r="3.5" fill="#222"/>
+<circle cx="266.0" cy="128.9" r="3.5" fill="#e07b00"/>
+<text x="266.0" y="410.7" fill="#222" text-anchor="middle">x, at time t</text>
+<text x="276.0" y="350.7" fill="#e07b00" text-anchor="start">v(x, t)</text>
+<text x="278.0" y="132.9" fill="#e07b00" text-anchor="start">x + v(x, t)·Δt</text>
+<text x="278.0" y="148.9" fill="#e07b00" text-anchor="start">at time t + Δt</text>
+<text x="158.4" y="159.0" fill="#222" text-anchor="end">where the true path is</text>
+<text x="158.4" y="175.0" fill="#222" text-anchor="end">at time t + Δt</text>
+<text x="217.2" y="133.9" fill="#b03a8c" text-anchor="middle">the error</text>
+<text x="222.8" y="245.7" fill="#222" text-anchor="end">the true path</text>
+<clipPath id="clip-whole"><rect x="446" y="64" width="400" height="400"/></clipPath>
+<rect x="446" y="64" width="400" height="400" fill="white" stroke="#888"/>
+<text x="446" y="56" font-weight="bold">t = 0 to 1 in 2, 4 and 16 steps</text>
+<g clip-path="url(#clip-whole)">
+<line x1="459.3" y1="450.7" x2="465.1" y2="458.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="406.2" x2="460.0" y2="414.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="361.8" x2="454.9" y2="369.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="317.3" x2="449.8" y2="325.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="272.9" x2="444.6" y2="280.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="228.4" x2="439.5" y2="236.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="184.0" x2="434.4" y2="191.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="139.6" x2="429.3" y2="147.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="95.1" x2="426.8" y2="102.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="459.3" y1="50.7" x2="426.6" y2="57.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="450.7" x2="509.6" y2="453.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="406.2" x2="504.5" y2="409.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="361.8" x2="499.3" y2="364.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="317.3" x2="494.2" y2="320.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="272.9" x2="489.1" y2="275.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="228.4" x2="484.0" y2="231.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="184.0" x2="478.9" y2="186.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="139.6" x2="473.7" y2="142.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="95.1" x2="470.5" y2="97.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="503.8" y1="50.7" x2="470.5" y2="53.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="450.7" x2="554.0" y2="448.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="406.2" x2="548.9" y2="403.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="361.8" x2="543.8" y2="359.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="317.3" x2="538.7" y2="315.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="272.9" x2="533.5" y2="270.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="228.4" x2="528.4" y2="226.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="184.0" x2="523.3" y2="181.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="139.6" x2="518.2" y2="137.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="95.1" x2="515.0" y2="92.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="548.2" y1="50.7" x2="514.9" y2="48.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="450.7" x2="598.5" y2="443.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="406.2" x2="593.3" y2="398.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="361.8" x2="588.2" y2="354.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="317.3" x2="583.1" y2="309.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="272.9" x2="578.0" y2="265.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="228.4" x2="572.9" y2="221.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="184.0" x2="567.7" y2="176.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="139.6" x2="562.6" y2="132.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="95.1" x2="560.1" y2="88.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="592.7" y1="50.7" x2="559.9" y2="44.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="450.7" x2="642.9" y2="438.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="406.2" x2="637.8" y2="393.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="361.8" x2="632.7" y2="349.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="317.3" x2="627.5" y2="304.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="272.9" x2="622.4" y2="260.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="228.4" x2="617.3" y2="215.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="184.0" x2="612.2" y2="171.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="139.6" x2="607.1" y2="127.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="95.1" x2="605.7" y2="83.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="637.1" y1="50.7" x2="605.3" y2="40.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="450.7" x2="687.4" y2="433.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="406.2" x2="682.2" y2="388.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="361.8" x2="677.1" y2="344.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="317.3" x2="672.0" y2="299.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="272.9" x2="666.9" y2="255.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="228.4" x2="661.8" y2="210.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="184.0" x2="656.6" y2="166.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="139.6" x2="652.8" y2="122.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="95.1" x2="651.8" y2="80.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="681.6" y1="50.7" x2="651.0" y2="37.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="450.7" x2="731.8" y2="427.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="406.2" x2="726.7" y2="383.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="361.8" x2="721.6" y2="338.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="317.3" x2="716.4" y2="294.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="272.9" x2="711.3" y2="250.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="228.4" x2="706.2" y2="205.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="184.0" x2="701.4" y2="161.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="139.6" x2="699.5" y2="119.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="95.1" x2="698.0" y2="77.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="726.0" y1="50.7" x2="697.0" y2="34.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="450.7" x2="776.2" y2="422.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="406.2" x2="771.1" y2="378.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="361.8" x2="766.0" y2="333.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="317.3" x2="760.9" y2="289.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="272.9" x2="755.8" y2="244.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="228.4" x2="751.2" y2="201.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="184.0" x2="748.3" y2="159.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="139.6" x2="746.0" y2="116.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="95.1" x2="744.3" y2="74.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="770.4" y1="50.7" x2="743.1" y2="31.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="450.7" x2="820.6" y2="417.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="406.2" x2="815.6" y2="373.2" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="361.8" x2="810.4" y2="328.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="317.3" x2="805.6" y2="285.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="272.9" x2="801.4" y2="242.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="228.4" x2="797.8" y2="199.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="184.0" x2="794.8" y2="157.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="139.6" x2="792.5" y2="114.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="95.1" x2="790.6" y2="72.3" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="814.9" y1="50.7" x2="789.1" y2="29.5" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="450.7" x2="864.3" y2="417.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="406.2" x2="859.9" y2="372.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="361.8" x2="855.5" y2="328.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="317.3" x2="851.2" y2="285.0" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="272.9" x2="847.4" y2="241.8" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="228.4" x2="844.0" y2="198.9" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="184.0" x2="841.1" y2="156.1" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="139.6" x2="838.7" y2="113.4" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="95.1" x2="836.8" y2="70.6" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+<line x1="859.3" y1="50.7" x2="835.1" y2="27.7" stroke="#c3ccd5" stroke-width="1.1" marker-end="url(#faint)"/>
+</g>
+<polyline points="709.6,400.4 709.6,395.6 709.4,390.8 709.1,386.1 708.6,381.4 708.1,376.6 707.4,371.9 706.6,367.2 705.7,362.6 704.6,357.9 703.4,353.3 702.1,348.7 700.7,344.2 699.2,339.7 697.6,335.2 695.8,330.8 693.9,326.4 691.9,322.1 689.8,317.8 687.6,313.6 685.3,309.5 682.8,305.4 680.3,301.3 677.7,297.4 674.9,293.5 672.1,289.7 669.1,285.9 666.1,282.3 662.9,278.7 659.7,275.2 656.4,271.8 653.0,268.5 649.5,265.2 645.9,262.1 642.2,259.1 638.5,256.1 634.7,253.3 630.8,250.5 626.8,247.9 622.8,245.3 618.7,242.9 614.6,240.6 610.4,238.4 606.1,236.3 601.8,234.3 597.4,232.4 593.0,230.6 588.5,229.0 584.0,227.4 579.5,226.0 574.9,224.7 570.3,223.6 565.6,222.5 561.0,221.6 556.3,220.8 551.6,220.1 546.8,219.5 542.1,219.1 537.3,218.8 532.6,218.6 527.8,218.5" fill="none" stroke="#222" stroke-width="1.6" stroke-dasharray="5 4" clip-path="url(#clip-whole)"/>
+<polyline points="709.6,400.4 709.6,257.6 597.5,114.8" fill="none" stroke="#e07b00" stroke-width="2"/>
+<circle cx="709.6" cy="400.4" r="3" fill="#e07b00"/>
+<circle cx="709.6" cy="257.6" r="3" fill="#e07b00"/>
+<circle cx="597.5" cy="114.8" r="3" fill="#e07b00"/>
+<text x="589.5" y="106.8" fill="#e07b00" text-anchor="start">2 steps: 62% too far out</text>
+<polyline points="709.6,400.4 709.6,329.0 681.6,257.6 625.5,197.2 545.7,158.8" fill="none" stroke="#1f6fb4" stroke-width="2"/>
+<circle cx="709.6" cy="400.4" r="3" fill="#1f6fb4"/>
+<circle cx="709.6" cy="329.0" r="3" fill="#1f6fb4"/>
+<circle cx="681.6" cy="257.6" r="3" fill="#1f6fb4"/>
+<circle cx="625.5" cy="197.2" r="3" fill="#1f6fb4"/>
+<circle cx="545.7" cy="158.8" r="3" fill="#1f6fb4"/>
+<text x="537.7" y="172.8" fill="#1f6fb4" text-anchor="end">4 steps: 33% too far out</text>
+<polyline points="709.6,400.4 709.6,382.5 707.9,364.7 704.4,347.0 699.1,329.7 692.2,312.8 683.6,296.7 673.4,281.4 661.7,267.1 648.7,254.0 634.3,242.1 618.8,231.6 602.2,222.7 584.7,215.4 566.6,209.8 547.9,206.0 528.8,204.0" fill="none" stroke="#2a9d4b" stroke-width="2"/>
+<circle cx="709.6" cy="400.4" r="1.8" fill="#2a9d4b"/>
+<circle cx="709.6" cy="382.5" r="1.8" fill="#2a9d4b"/>
+<circle cx="707.9" cy="364.7" r="1.8" fill="#2a9d4b"/>
+<circle cx="704.4" cy="347.0" r="1.8" fill="#2a9d4b"/>
+<circle cx="699.1" cy="329.7" r="1.8" fill="#2a9d4b"/>
+<circle cx="692.2" cy="312.8" r="1.8" fill="#2a9d4b"/>
+<circle cx="683.6" cy="296.7" r="1.8" fill="#2a9d4b"/>
+<circle cx="673.4" cy="281.4" r="1.8" fill="#2a9d4b"/>
+<circle cx="661.7" cy="267.1" r="1.8" fill="#2a9d4b"/>
+<circle cx="648.7" cy="254.0" r="1.8" fill="#2a9d4b"/>
+<circle cx="634.3" cy="242.1" r="1.8" fill="#2a9d4b"/>
+<circle cx="618.8" cy="231.6" r="1.8" fill="#2a9d4b"/>
+<circle cx="602.2" cy="222.7" r="1.8" fill="#2a9d4b"/>
+<circle cx="584.7" cy="215.4" r="1.8" fill="#2a9d4b"/>
+<circle cx="566.6" cy="209.8" r="1.8" fill="#2a9d4b"/>
+<circle cx="547.9" cy="206.0" r="1.8" fill="#2a9d4b"/>
+<circle cx="528.8" cy="204.0" r="1.8" fill="#2a9d4b"/>
+<text x="520.8" y="218.0" fill="#2a9d4b" text-anchor="end">16 steps: 8% too far out</text>
+<circle cx="709.6" cy="400.4" r="3.5" fill="#222"/>
+<circle cx="527.8" cy="218.5" r="3.5" fill="#222"/>
+<text x="709.6" y="420.4" fill="#222" text-anchor="middle">start (t = 0)</text>
+<text x="519.8" y="236.5" fill="#222" text-anchor="end">true end</text>
+<text x="16" y="486" fill="#555">Grey arrows: the velocity field v (here a rotation, the same at every t, so its true paths are circles: dashed).</text>
+<text x="16" y="504" fill="#555">Each step goes straight along the velocity where it starts; the path curves, so the step lands off it. Smaller steps, smaller errors.</text>
+</svg>

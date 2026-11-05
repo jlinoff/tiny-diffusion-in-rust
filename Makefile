@@ -328,6 +328,10 @@ stage6-figures: ## Redraw stage 6's loss curves (docs/stage6/*.svg) from their d
 		--ref "6.03:knowing only how common each token is" \
 		--ref "3.23:tiny-llm-in-rust at 2,000 steps (validation)"
 
+.PHONY: euler-figure
+euler-figure: ## The Euler step, drawn (docs/euler.svg): one step, and t = 0 to 1 in 2, 4 and 16 steps.
+	python3 tools/euler_figure.py -o docs/euler.svg
+
 .PHONY: stage6-text-figures
 stage6-text-figures: ## Stage 6's text figures: masking, and the infill step by step from its traces in docs/stage6/.
 	python3 tools/text_figures.py masking -o docs/stage6/masking.svg
