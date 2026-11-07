@@ -20,3 +20,4 @@ FLUX
 OpenAI
 PyTorch
 DALL
+TinyStories         # the stories dataset, a name
